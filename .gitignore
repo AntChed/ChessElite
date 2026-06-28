@@ -3,6 +3,17 @@
 # dependencies
 node_modules/
 
+# local secrets
+.env
+.env.*
+!.env.example
+*.local
+secrets.*
+credentials.*
+*service-account*.json
+google-services.json
+**/google-services.json
+
 # Expo
 .expo/
 dist/
@@ -12,23 +23,55 @@ expo-env.d.ts
 # Native
 .kotlin/
 *.orig.*
+*.keystore
 *.jks
 *.p8
 *.p12
 *.key
+*.pem
 *.mobileprovision
+android/signing.properties
+android/keystores/
+android/app/debug.keystore
+android/app/*.keystore
+android/app/*.jks
+android/app/*.p12
 
 # Metro
 .metro-health-check*
+
+# Android build artifacts
+*.apk
+*.aab
+*.apks
+*.idsig
+android/.gradle/
+android/.kotlin/
+android/.cxx/
+android/build/
+android/app/build/
 
 # debug
 npm-debug.*
 yarn-debug.*
 yarn-error.*
 
+# Local Expo server logs
+expo-dev.log
+expo-android-run.log
+expo-splash-test.log
+chess-elite-step*.png
+chess-elite-loading.png
+chess-elite-loaded.png
+
 # macOS
 .DS_Store
-*.pem
+
+# editors and local tooling
+.idea/
+.vscode/
+.claude/*.local.json
+.claude/cache/
 
 # local env files
 .env*.local

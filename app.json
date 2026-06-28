@@ -1,17 +1,18 @@
 {
   "expo": {
-    "name": "ChessSkinsApp",
-    "slug": "ChessSkinsApp",
+    "name": "Chess Elite",
+    "slug": "chess-elite",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true
     },
     "android": {
+      "package": "com.antoine.chesselite",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#050505",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -20,6 +21,24 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#050505",
+          "image": "./assets/splash/chess-elite-splash.png",
+          "imageWidth": 420,
+          "resizeMode": "cover",
+          "dark": {
+            "backgroundColor": "#050505",
+            "image": "./assets/splash/chess-elite-splash.png",
+            "imageWidth": 420,
+            "resizeMode": "cover"
+          }
+        }
+      ],
+      "expo-audio"
+    ]
   }
 }

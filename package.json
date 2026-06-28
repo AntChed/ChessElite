@@ -1,12 +1,19 @@
 {
-  "name": "chessskinsapp",
+  "name": "chess-elite",
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "chess.js": "^1.4.0",
     "expo": "~56.0.12",
+    "expo-audio": "~56.0.12",
+    "expo-haptics": "56.0.2",
+    "expo-splash-screen": "~56.0.10",
     "expo-status-bar": "~56.0.4",
+    "fix": "^0.0.6",
     "react": "19.2.3",
-    "react-native": "0.85.3"
+    "react-native": "0.85.3",
+    "react-native-svg": "15.15.4"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
@@ -14,9 +21,16 @@
   },
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web"
+  },
+  "expo": {
+    "install": {
+      "exclude": [
+        "expo-haptics"
+      ]
+    }
   },
   "private": true
 }
