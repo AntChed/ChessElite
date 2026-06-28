@@ -165,6 +165,7 @@ export function ChessBoard({
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
   const [selectedThemeId, setSelectedThemeId] = useState<BoardThemeId>(defaultBoardThemeId);
   const [selectedPieceSkinId, setSelectedPieceSkinId] = useState<PieceSkinId>(defaultPieceSkinId);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const game = useMemo(() => createGameFromFen(gameFen), [gameFen]);
@@ -201,6 +202,7 @@ export function ChessBoard({
   const selectedClockModeLabel = getClockModeLabel(clockModeId);
   const selectedLanguageOption =
     languageOptions.find((languageOption) => languageOption.id === languageId) ?? languageOptions[0];
+  const selectedSoundLabel = t(languageId, soundEnabled ? 'sound.on' : 'sound.off');
 
   useEffect(() => {
     let isMounted = true;
@@ -212,6 +214,7 @@ export function ChessBoard({
         setSelectedAiLevel(preferences.aiLevel);
         setSelectedThemeId(preferences.boardThemeId);
         setSelectedPieceSkinId(preferences.pieceSkinId);
+        setSoundEnabled(preferences.soundEnabled);
         setPreferencesLoaded(true);
       }
     }
@@ -237,8 +240,9 @@ export function ChessBoard({
       boardThemeId: selectedThemeId,
       languageId,
       pieceSkinId: selectedPieceSkinId,
+      soundEnabled,
     }).catch(() => undefined);
-  }, [languageId, preferencesLoaded, selectedAiLevel, selectedPieceSkinId, selectedThemeId]);
+  }, [languageId, preferencesLoaded, selectedAiLevel, selectedPieceSkinId, selectedThemeId, soundEnabled]);
 
   useEffect(() => {
     if (!isClockEnabled || timeExpired || game.isGameOver()) {
@@ -445,10 +449,12 @@ export function ChessBoard({
   function playMoveFeedback(isCapture: boolean, isCheck: boolean, isGameOver: boolean) {
     const player = isCapture ? capturePlayer : movePlayer;
 
-    player
-      .seekTo(0)
-      .then(() => player.play())
-      .catch(() => undefined);
+    if (soundEnabled) {
+      player
+        .seekTo(0)
+        .then(() => player.play())
+        .catch(() => undefined);
+    }
 
     if (isGameOver) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
@@ -541,6 +547,11 @@ export function ChessBoard({
     Haptics.selectionAsync().catch(() => undefined);
   }
 
+  function handleSoundEnabledChange(nextSoundEnabled: boolean) {
+    setSoundEnabled(nextSoundEnabled);
+    Haptics.selectionAsync().catch(() => undefined);
+  }
+
   const settingsContent = (
     <View style={styles.settingsPanel}>
       {isAiEnabled ? (
@@ -588,6 +599,31 @@ export function ChessBoard({
               >
                 <Text style={[styles.clockModeText, isActive ? styles.clockModeTextActive : null]}>
                   {modeLabel}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+      <View style={styles.settingsSection}>
+        <View style={styles.settingsSectionHeader}>
+          <Text style={styles.settingsTitle}>{t(languageId, 'settings.sound')}</Text>
+          <Text style={styles.settingsSummary}>{selectedSoundLabel}</Text>
+        </View>
+        <View style={styles.soundModeSelector}>
+          {[true, false].map((nextSoundEnabled) => {
+            const isActive = nextSoundEnabled === soundEnabled;
+            const soundLabel = t(languageId, nextSoundEnabled ? 'sound.on' : 'sound.off');
+
+            return (
+              <Pressable
+                accessibilityLabel={t(languageId, 'sound.use', { label: soundLabel })}
+                key={String(nextSoundEnabled)}
+                onPress={() => handleSoundEnabledChange(nextSoundEnabled)}
+                style={[styles.soundModeButton, isActive ? styles.soundModeButtonActive : null]}
+              >
+                <Text style={[styles.soundModeText, isActive ? styles.soundModeTextActive : null]}>
+                  {soundLabel}
                 </Text>
               </Pressable>
             );
@@ -1316,6 +1352,30 @@ const styles = StyleSheet.create({
     color: '#f5efe6',
     fontSize: 13,
     fontWeight: '900',
+  },
+  soundModeButton: {
+    alignItems: 'center',
+    borderColor: 'rgba(245, 239, 230, 0.16)',
+    borderRadius: 6,
+    borderWidth: 2,
+    flex: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  soundModeButtonActive: {
+    borderColor: '#d7a950',
+  },
+  soundModeSelector: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  soundModeText: {
+    color: '#f5efe6',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  soundModeTextActive: {
+    color: '#ffd560',
   },
   statusText: {
     color: '#f5efe6',

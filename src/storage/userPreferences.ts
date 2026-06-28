@@ -12,6 +12,7 @@ export type UserPreferences = {
   boardThemeId: BoardThemeId;
   languageId: LanguageId;
   pieceSkinId: PieceSkinId;
+  soundEnabled: boolean;
 };
 
 export const defaultUserPreferences: UserPreferences = {
@@ -19,6 +20,7 @@ export const defaultUserPreferences: UserPreferences = {
   boardThemeId: defaultBoardThemeId,
   languageId: defaultLanguageId,
   pieceSkinId: defaultPieceSkinId,
+  soundEnabled: true,
 };
 
 export async function loadUserPreferences(): Promise<UserPreferences> {
@@ -42,6 +44,10 @@ export async function loadUserPreferences(): Promise<UserPreferences> {
       pieceSkinId: isPieceSkinId(parsedValue.pieceSkinId)
         ? parsedValue.pieceSkinId
         : defaultUserPreferences.pieceSkinId,
+      soundEnabled:
+        typeof parsedValue.soundEnabled === 'boolean'
+          ? parsedValue.soundEnabled
+          : defaultUserPreferences.soundEnabled,
     };
   } catch {
     return defaultUserPreferences;
