@@ -15,6 +15,7 @@ import {
 import { ChessBoard, type OpponentMode } from '../components/ChessBoard';
 import { t, type LanguageId } from '../i18n/translations';
 import type { AiLevel } from '../game/ai';
+import type { PlayerProgress } from '../storage/playerProgress';
 
 type BoardScreenProps = {
   initialOpponentMode?: OpponentMode;
@@ -22,6 +23,7 @@ type BoardScreenProps = {
   onAiLevelChange: (aiLevel: AiLevel) => void;
   onBack: () => void;
   onLanguageChange: (languageId: LanguageId) => void;
+  onPlayerProgressChange?: (progress: PlayerProgress) => void;
 };
 
 export function BoardScreen({
@@ -30,6 +32,7 @@ export function BoardScreen({
   onAiLevelChange,
   onBack,
   onLanguageChange,
+  onPlayerProgressChange,
 }: BoardScreenProps) {
   const { height, width } = useWindowDimensions();
   const [settingsExpanded, setSettingsExpanded] = useState(false);
@@ -138,6 +141,7 @@ export function BoardScreen({
           onAiLevelChange={onAiLevelChange}
           onCloseSettings={handleCloseSettings}
           onLanguageChange={onLanguageChange}
+          onPlayerProgressChange={onPlayerProgressChange}
           settingsExpanded={settingsExpanded}
         />
       </ScrollView>

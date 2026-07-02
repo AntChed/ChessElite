@@ -15,7 +15,14 @@ import {
 import { createInitialGame } from './src/game/engine';
 import { BoardScreen } from './src/screens/BoardScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
+import { SkinsScreen } from './src/screens/SkinsScreen';
+import { StatsScreen } from './src/screens/StatsScreen';
 import { defaultLanguageId, t, type LanguageId } from './src/i18n/translations';
+import {
+  createDefaultPlayerProgress,
+  loadPlayerProgress,
+  type PlayerProgress,
+} from './src/storage/playerProgress';
 import { loadUserPreferences } from './src/storage/userPreferences';
 import type { OpponentMode } from './src/components/ChessBoard';
 import type { AiLevel } from './src/game/ai';
@@ -23,7 +30,7 @@ import type { AiLevel } from './src/game/ai';
 SplashScreen.preventAutoHideAsync();
 
 const minimumLoadingTime = 1800;
-type AppScreen = 'game' | 'home';
+type AppScreen = 'game' | 'home' | 'skins' | 'stats';
 
 export default function App() {
   const [isAppReady, setIsAppReady] = useState(false);
@@ -33,6 +40,7 @@ export default function App() {
   const [initialOpponentMode, setInitialOpponentMode] = useState<OpponentMode>(0);
   const [isTransitionVisible, setIsTransitionVisible] = useState(false);
   const [languageId, setLanguageId] = useState<LanguageId>(defaultLanguageId);
+  const [playerProgress, setPlayerProgress] = useState<PlayerProgress>(() => createDefaultPlayerProgress());
   const loadingProgress = useRef(new Animated.Value(0)).current;
   const screenOpacity = useRef(new Animated.Value(1)).current;
   const screenTranslateY = useRef(new Animated.Value(0)).current;
@@ -58,9 +66,10 @@ export default function App() {
     async function prepareApp() {
       try {
         createInitialGame();
-        const preferences = await loadUserPreferences();
+        const [preferences, progress] = await Promise.all([loadUserPreferences(), loadPlayerProgress()]);
         setAiLevel(preferences.aiLevel);
         setLanguageId(preferences.languageId);
+        setPlayerProgress(progress);
         await new Promise((resolve) => setTimeout(resolve, minimumLoadingTime));
       } catch (error) {
         console.warn(error);
@@ -162,7 +171,7 @@ export default function App() {
   );
 
   useEffect(() => {
-    if (screen !== 'game') {
+    if (screen === 'home') {
       return undefined;
     }
 
@@ -173,6 +182,26 @@ export default function App() {
 
     return () => subscription.remove();
   }, [navigateTo, screen]);
+
+  useEffect(() => {
+    if (screen !== 'home' || showLoadingScreen) {
+      return;
+    }
+
+    let isMounted = true;
+
+    loadPlayerProgress()
+      .then((progress) => {
+        if (isMounted) {
+          setPlayerProgress(progress);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [screen, showLoadingScreen]);
 
   if (showLoadingScreen) {
     return (
@@ -205,16 +234,33 @@ export default function App() {
           <HomeScreen
             aiLevel={aiLevel}
             languageId={languageId}
+            onOpenSkins={() => navigateTo('skins')}
+            onOpenStats={() => navigateTo('stats')}
             onStartAiGame={() => startGame(aiLevel)}
             onStartLocalGame={() => startGame(0)}
+            playerProgress={playerProgress}
           />
-        ) : (
+        ) : screen === 'game' ? (
           <BoardScreen
             initialOpponentMode={initialOpponentMode}
             languageId={languageId}
             onAiLevelChange={setAiLevel}
             onBack={() => navigateTo('home')}
             onLanguageChange={setLanguageId}
+            onPlayerProgressChange={setPlayerProgress}
+          />
+        ) : screen === 'skins' ? (
+          <SkinsScreen
+            languageId={languageId}
+            onBack={() => navigateTo('home')}
+            onPlayerProgressChange={setPlayerProgress}
+            playerProgress={playerProgress}
+          />
+        ) : (
+          <StatsScreen
+            languageId={languageId}
+            onBack={() => navigateTo('home')}
+            playerProgress={playerProgress}
           />
         )}
       </Animated.View>

@@ -16,21 +16,29 @@ import type { Color, Move, PieceSymbol, Square } from 'chess.js';
 
 import { ChessPiece } from './ChessPiece';
 import { ChessSquare } from './ChessSquare';
+import { VictoryOverlay } from './VictoryOverlay';
 import { aiLevelList, selectAiMove, type AiLevel } from '../game/ai';
 import { createGameFromFen, createInitialGame } from '../game/engine';
 import { languageOptions, t, type LanguageId } from '../i18n/translations';
 import {
   defaultPieceSkinId,
-  pieceSkinList,
   pieceSkins,
   type PieceSkinId,
 } from '../skins/pieceSkins';
+import { chessSkins, getChessSkinIdForSelection } from '../skins/chessSkins';
 import {
-  boardThemeList,
   boardThemes,
   defaultBoardThemeId,
   type BoardThemeId,
 } from '../themes/boardThemes';
+import {
+  createDefaultPlayerProgress,
+  loadPlayerProgress,
+  recordCompletedGame,
+  savePlayerProgress,
+  type CompletedGameResult,
+  type PlayerProgress,
+} from '../storage/playerProgress';
 import { loadUserPreferences, saveUserPreferences } from '../storage/userPreferences';
 import { files, toSquare } from '../utils/coordinates';
 
@@ -60,6 +68,7 @@ type PlayerClock = {
 };
 
 type GameSnapshot = {
+  checkCount: number;
   clockTimes: PlayerClock;
   fen: string;
 };
@@ -132,6 +141,7 @@ type ChessBoardProps = {
   onAiLevelChange?: (aiLevel: AiLevel) => void;
   onCloseSettings?: () => void;
   onLanguageChange: (languageId: LanguageId) => void;
+  onPlayerProgressChange?: (progress: PlayerProgress) => void;
   settingsExpanded?: boolean;
 };
 
@@ -142,6 +152,7 @@ export function ChessBoard({
   onAiLevelChange,
   onCloseSettings,
   onLanguageChange,
+  onPlayerProgressChange,
   settingsExpanded = false,
 }: ChessBoardProps) {
   const { width, height } = useWindowDimensions();
@@ -160,13 +171,18 @@ export function ChessBoard({
   const [aiThinking, setAiThinking] = useState(false);
   const [clockModeId, setClockModeId] = useState<ClockModeId>('none');
   const [clockTimes, setClockTimes] = useState<PlayerClock>(() => createClockTimes('none'));
+  const [gameCheckCount, setGameCheckCount] = useState(0);
   const [timeExpired, setTimeExpired] = useState<'b' | 'w' | null>(null);
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
   const [selectedThemeId, setSelectedThemeId] = useState<BoardThemeId>(defaultBoardThemeId);
   const [selectedPieceSkinId, setSelectedPieceSkinId] = useState<PieceSkinId>(defaultPieceSkinId);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [dismissedOutcomeKey, setDismissedOutcomeKey] = useState<string | null>(null);
+  const [playerProgress, setPlayerProgress] = useState<PlayerProgress>(() => createDefaultPlayerProgress());
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const [progressLoaded, setProgressLoaded] = useState(false);
+  const [recordedOutcomeKey, setRecordedOutcomeKey] = useState<string | null>(null);
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const game = useMemo(() => createGameFromFen(gameFen), [gameFen]);
   const boardTheme = boardThemes[selectedThemeId];
@@ -203,24 +219,110 @@ export function ChessBoard({
   const selectedLanguageOption =
     languageOptions.find((languageOption) => languageOption.id === languageId) ?? languageOptions[0];
   const selectedSoundLabel = t(languageId, soundEnabled ? 'sound.on' : 'sound.off');
+  const selectedChessSkinId = playerProgress.selectedSkinId;
+  const winningOutcome = useMemo(() => {
+    if (timeExpired) {
+      return {
+        reasonKey: 'victory.timeOut',
+        winner: timeExpired === 'w' ? 'b' : 'w',
+      } as const;
+    }
+
+    if (game.isCheckmate()) {
+      return {
+        reasonKey: 'victory.checkmate',
+        winner: game.turn() === 'w' ? 'b' : 'w',
+      } as const;
+    }
+
+    return null;
+  }, [game, timeExpired]);
+  const outcomeVariant = winningOutcome && isAiEnabled && winningOutcome.winner === 'b' ? 'defeat' : 'victory';
+  const shouldShowOutcome = Boolean(winningOutcome);
+  const outcomeKey =
+    shouldShowOutcome && winningOutcome
+      ? `${outcomeVariant}-${winningOutcome.winner}-${winningOutcome.reasonKey}-${gameFen}`
+      : null;
+  const outcomeOverlayVisible = Boolean(outcomeKey && dismissedOutcomeKey !== outcomeKey);
+  const outcomeHeadline =
+    outcomeVariant === 'defeat'
+      ? t(languageId, 'defeat.aiWins')
+      : winningOutcome?.winner === 'w'
+        ? t(languageId, 'victory.whiteWins')
+        : winningOutcome?.winner === 'b'
+          ? t(languageId, 'victory.blackWins')
+          : '';
+  const outcomeSubtitle = winningOutcome
+    ? t(
+        languageId,
+        outcomeVariant === 'defeat'
+          ? winningOutcome.reasonKey === 'victory.timeOut'
+            ? 'defeat.timeOut'
+            : 'defeat.checkmate'
+          : winningOutcome.reasonKey,
+      )
+    : '';
+  const completedGameResult = useMemo<CompletedGameResult | null>(() => {
+    if (winningOutcome) {
+      return {
+        checkmate: game.isCheckmate(),
+        checks: gameCheckCount,
+        result: getProgressResult(winningOutcome.winner),
+        selectedSkinId: selectedChessSkinId,
+      };
+    }
+
+    if (game.isStalemate() || game.isDraw()) {
+      return {
+        checkmate: false,
+        checks: gameCheckCount,
+        result: 'draw',
+        selectedSkinId: selectedChessSkinId,
+      };
+    }
+
+    return null;
+  }, [game, gameCheckCount, isAiEnabled, selectedChessSkinId, winningOutcome]);
+  const completedGameKey = completedGameResult ? `${gameFen}-${timeExpired ?? 'board'}` : null;
 
   useEffect(() => {
     let isMounted = true;
 
     async function restorePreferences() {
-      const preferences = await loadUserPreferences();
+      const [preferences, progress] = await Promise.all([loadUserPreferences(), loadPlayerProgress()]);
+      const preferenceSkinId = getChessSkinIdForSelection(preferences.boardThemeId, preferences.pieceSkinId);
+      const shouldMigrateFreePreferenceSkin =
+        progress.gamesPlayed === 0 &&
+        progress.xp === 0 &&
+        progress.selectedSkinId === 'classic' &&
+        chessSkins[preferenceSkinId].unlockCondition.type === 'free';
+      const resolvedProgress = shouldMigrateFreePreferenceSkin
+        ? {
+            ...progress,
+            selectedSkinId: preferenceSkinId,
+            unlockedSkinIds: Array.from(new Set([...progress.unlockedSkinIds, preferenceSkinId])),
+          }
+        : progress;
+      const selectedSkin = chessSkins[resolvedProgress.selectedSkinId];
 
       if (isMounted) {
         setSelectedAiLevel(preferences.aiLevel);
-        setSelectedThemeId(preferences.boardThemeId);
-        setSelectedPieceSkinId(preferences.pieceSkinId);
+        setSelectedThemeId(selectedSkin.boardThemeId);
+        setSelectedPieceSkinId(selectedSkin.pieceSkinId);
         setSoundEnabled(preferences.soundEnabled);
+        setPlayerProgress(resolvedProgress);
+        setProgressLoaded(true);
         setPreferencesLoaded(true);
+      }
+
+      if (shouldMigrateFreePreferenceSkin) {
+        savePlayerProgress(resolvedProgress).catch(() => undefined);
       }
     }
 
     restorePreferences().catch(() => {
       if (isMounted) {
+        setProgressLoaded(true);
         setPreferencesLoaded(true);
       }
     });
@@ -243,6 +345,38 @@ export function ChessBoard({
       soundEnabled,
     }).catch(() => undefined);
   }, [languageId, preferencesLoaded, selectedAiLevel, selectedPieceSkinId, selectedThemeId, soundEnabled]);
+
+  useEffect(() => {
+    if (
+      !progressLoaded ||
+      !completedGameResult ||
+      !completedGameKey ||
+      recordedOutcomeKey === completedGameKey
+    ) {
+      return;
+    }
+
+    let isMounted = true;
+
+    setRecordedOutcomeKey(completedGameKey);
+
+    recordCompletedGame(completedGameResult)
+      .then((nextProgress) => {
+        if (isMounted) {
+          setPlayerProgress(nextProgress);
+          onPlayerProgressChange?.(nextProgress);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setRecordedOutcomeKey(null);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [completedGameKey, completedGameResult, onPlayerProgressChange, progressLoaded, recordedOutcomeKey]);
 
   useEffect(() => {
     if (!isClockEnabled || timeExpired || game.isGameOver()) {
@@ -325,16 +459,16 @@ export function ChessBoard({
     return legalMoves.filter((move) => move.to === square);
   }
 
-  function getBoardThemeLabel(themeId: BoardThemeId) {
-    return t(languageId, `board.${themeId}`);
-  }
-
   function getClockModeLabel(modeId: ClockModeId) {
     return t(languageId, `clock.${modeId}`);
   }
 
-  function getPieceSkinLabel(skinId: PieceSkinId) {
-    return t(languageId, `pieces.${skinId}`);
+  function getProgressResult(winner: Color): CompletedGameResult['result'] {
+    if (!isAiEnabled) {
+      return 'draw';
+    }
+
+    return winner === 'w' ? 'win' : 'loss';
   }
 
   function getGameStatusLabel() {
@@ -438,11 +572,15 @@ export function ChessBoard({
     setGameSnapshots((currentSnapshots) => [
       ...currentSnapshots,
       {
+        checkCount: gameCheckCount,
         clockTimes,
         fen: gameFen,
       },
     ]);
     setMoveHistory((currentHistory) => [...currentHistory, move.san]);
+    if (nextGame.isCheck()) {
+      setGameCheckCount((currentCount) => currentCount + 1);
+    }
     playMoveFeedback(Boolean(move.captured), nextGame.isCheck(), nextGame.isGameOver());
   }
 
@@ -483,9 +621,12 @@ export function ChessBoard({
 
   function handleNewGame() {
     setAnimatedMove(null);
+    setDismissedOutcomeKey(null);
+    setRecordedOutcomeKey(null);
     setGameFen(createInitialGame().fen());
     setGameSnapshots([]);
     setMoveHistory([]);
+    setGameCheckCount(0);
     setClockTimes(createClockTimes(clockModeId));
     setTimeExpired(null);
     setSelectedSquare(null);
@@ -502,9 +643,12 @@ export function ChessBoard({
     const previousSnapshot = gameSnapshots[gameSnapshots.length - undoMoveCount];
 
     setAnimatedMove(null);
+    setDismissedOutcomeKey(null);
+    setRecordedOutcomeKey(null);
     setGameFen(previousSnapshot.fen);
     setGameSnapshots((currentSnapshots) => currentSnapshots.slice(0, -undoMoveCount));
     setMoveHistory((currentHistory) => currentHistory.slice(0, -undoMoveCount));
+    setGameCheckCount(previousSnapshot.checkCount);
     setClockTimes(previousSnapshot.clockTimes);
     setTimeExpired(null);
     setAiThinking(false);
@@ -515,24 +659,17 @@ export function ChessBoard({
 
   function handleClockModeChange(nextClockModeId: ClockModeId) {
     setClockModeId(nextClockModeId);
+    setDismissedOutcomeKey(null);
+    setRecordedOutcomeKey(null);
     setClockTimes(createClockTimes(nextClockModeId));
     setTimeExpired(null);
     setAnimatedMove(null);
     setGameFen(createInitialGame().fen());
     setGameSnapshots([]);
     setMoveHistory([]);
+    setGameCheckCount(0);
     setSelectedSquare(null);
     setPendingPromotion(null);
-    Haptics.selectionAsync().catch(() => undefined);
-  }
-
-  function handleThemeChange(themeId: BoardThemeId) {
-    setSelectedThemeId(themeId);
-    Haptics.selectionAsync().catch(() => undefined);
-  }
-
-  function handlePieceSkinChange(skinId: PieceSkinId) {
-    setSelectedPieceSkinId(skinId);
     Haptics.selectionAsync().catch(() => undefined);
   }
 
@@ -550,6 +687,16 @@ export function ChessBoard({
   function handleSoundEnabledChange(nextSoundEnabled: boolean) {
     setSoundEnabled(nextSoundEnabled);
     Haptics.selectionAsync().catch(() => undefined);
+  }
+
+  function handleCloseOutcomeOverlay() {
+    if (outcomeKey) {
+      setDismissedOutcomeKey(outcomeKey);
+    }
+  }
+
+  function handleOutcomeNewGame() {
+    handleNewGame();
   }
 
   const settingsContent = (
@@ -624,87 +771,6 @@ export function ChessBoard({
               >
                 <Text style={[styles.soundModeText, isActive ? styles.soundModeTextActive : null]}>
                   {soundLabel}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
-      <View style={styles.settingsSection}>
-        <View style={styles.settingsSectionHeader}>
-          <Text style={styles.settingsTitle}>{t(languageId, 'settings.board')}</Text>
-          <Text style={styles.settingsSummary}>{getBoardThemeLabel(selectedThemeId)}</Text>
-        </View>
-        <View style={styles.themeSelector}>
-          {boardThemeList.map((theme) => {
-            const isActive = theme.id === selectedThemeId;
-            const themeLabel = getBoardThemeLabel(theme.id);
-
-            return (
-              <Pressable
-                accessibilityLabel={t(languageId, 'theme.use', { label: themeLabel })}
-                key={theme.id}
-                onPress={() => handleThemeChange(theme.id)}
-                style={[
-                  styles.themeButton,
-                  isActive ? { borderColor: theme.accent } : styles.themeButtonInactive,
-                ]}
-              >
-                <View style={styles.swatch}>
-                  <View style={[styles.swatchHalf, { backgroundColor: theme.lightSquare }]} />
-                  <View style={[styles.swatchHalf, { backgroundColor: theme.darkSquare }]} />
-                </View>
-                <Text style={[styles.themeText, isActive ? { color: theme.accent } : null]}>
-                  {themeLabel}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
-      <View style={styles.settingsSection}>
-        <View style={styles.settingsSectionHeader}>
-          <Text style={styles.settingsTitle}>{t(languageId, 'settings.pieces')}</Text>
-          <Text style={styles.settingsSummary}>{getPieceSkinLabel(selectedPieceSkinId)}</Text>
-        </View>
-        <View style={styles.skinSelector}>
-          {pieceSkinList.map((skin) => {
-            const isActive = skin.id === selectedPieceSkinId;
-            const skinLabel = getPieceSkinLabel(skin.id);
-
-            return (
-              <Pressable
-                accessibilityLabel={t(languageId, 'piece.use', { label: skinLabel })}
-                key={skin.id}
-                onPress={() => handlePieceSkinChange(skin.id)}
-                style={[
-                  styles.skinButton,
-                  isActive ? { borderColor: skin.accent } : styles.themeButtonInactive,
-                ]}
-              >
-                <View style={styles.skinPreview}>
-                  <View
-                    style={[
-                      styles.skinPreviewPiece,
-                      {
-                        backgroundColor: skin.lightFill,
-                        borderColor: skin.lightStroke,
-                      },
-                    ]}
-                  />
-                  <View
-                    style={[
-                      styles.skinPreviewPiece,
-                      styles.skinPreviewDark,
-                      {
-                        backgroundColor: skin.darkFill,
-                        borderColor: skin.darkStroke,
-                      },
-                    ]}
-                  />
-                </View>
-                <Text style={[styles.themeText, isActive ? { color: skin.accent } : null]}>
-                  {skinLabel}
                 </Text>
               </Pressable>
             );
@@ -1009,6 +1075,20 @@ export function ChessBoard({
           </View>
         </View>
       </Modal>
+      <VictoryOverlay
+        closeLabel={t(
+          languageId,
+          outcomeVariant === 'defeat' ? 'accessibility.closeDefeat' : 'accessibility.closeVictory',
+        )}
+        newGameLabel={t(languageId, 'newGame')}
+        onClose={handleCloseOutcomeOverlay}
+        onNewGame={handleOutcomeNewGame}
+        subtitle={outcomeSubtitle}
+        title={t(languageId, outcomeVariant === 'defeat' ? 'defeat.title' : 'victory.title')}
+        variant={outcomeVariant}
+        visible={outcomeOverlayVisible}
+        winnerLabel={outcomeHeadline}
+      />
     </View>
   );
 }
@@ -1383,65 +1463,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 14,
   },
-  skinButton: {
-    alignItems: 'center',
-    borderRadius: 6,
-    borderWidth: 2,
-    minWidth: 62,
-    paddingHorizontal: 7,
-    paddingVertical: 8,
-  },
-  skinPreview: {
-    flexDirection: 'row',
-    height: 20,
-    justifyContent: 'center',
-    width: 30,
-  },
-  skinPreviewDark: {
-    marginLeft: -4,
-  },
-  skinPreviewPiece: {
-    borderRadius: 999,
-    borderWidth: 2,
-    height: 18,
-    width: 18,
-  },
-  skinSelector: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    justifyContent: 'center',
-    maxWidth: 420,
-  },
-  swatch: {
-    borderColor: 'rgba(245, 239, 230, 0.3)',
-    borderRadius: 999,
-    borderWidth: 1,
-    flexDirection: 'row',
-    height: 18,
-    overflow: 'hidden',
-    width: 18,
-  },
-  swatchHalf: {
-    flex: 1,
-  },
-  themeButton: {
-    alignItems: 'center',
-    borderRadius: 6,
-    borderWidth: 2,
-    minWidth: 70,
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-  },
   themeButtonInactive: {
     borderColor: 'rgba(245, 239, 230, 0.16)',
-  },
-  themeSelector: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    justifyContent: 'center',
-    maxWidth: 360,
   },
   themeText: {
     color: '#f5efe6',
