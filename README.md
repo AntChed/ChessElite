@@ -4,6 +4,10 @@ Application mobile Android d'echecs developpee avec Expo, React Native et TypeSc
 
 L'objectif est de proposer un jeu local simple et agreable, avec un plateau fonctionnel, des regles d'echecs fiables, des themes visuels, des skins de pieces et une experience mobile polie.
 
+## Apercu
+
+![Rendu du plateau Chess Elite](assets/screenshots/chess-elite-board-portrait.png)
+
 ## Etat du projet
 
 La premiere version Android est fonctionnelle et installee via APK sur telephone.
@@ -33,7 +37,7 @@ Statut actuel :
 
 ## Stack
 
-- Expo `~56.0.12`
+- Expo `~56.0.19`
 - React Native `0.85.3`
 - React `19.2.3`
 - TypeScript
@@ -50,9 +54,9 @@ Note : `expo-haptics` est fixe en version `56.0.2`, car la version `56.0.3` disp
 
 ```txt
 chess
-|-- README.md
 |-- todo.txt
 `-- ChessElite
+    |-- README.md
     |-- App.tsx
     |-- app.json
     |-- package.json
@@ -61,6 +65,8 @@ chess
     |   |-- android-icon-foreground.png
     |   |-- android-icon-background.png
     |   |-- android-icon-monochrome.png
+    |   |-- screenshots
+    |   |   `-- chess-elite-board-portrait.png
     |   |-- sounds
     |   |   |-- move.wav
     |   |   `-- capture.wav
@@ -74,12 +80,19 @@ chess
         |-- game
         |   |-- ai.ts
         |   `-- engine.ts
+        |-- i18n
+        |   `-- translations.ts
         |-- screens
         |   |-- HomeScreen.tsx
-        |   `-- BoardScreen.tsx
+        |   |-- BoardScreen.tsx
+        |   |-- SkinsScreen.tsx
+        |   `-- StatsScreen.tsx
         |-- skins
-        |   `-- pieceSkins.ts
+        |   |-- chessSkins.ts
+        |   |-- pieceSkins.ts
+        |   `-- skinUnlocks.ts
         |-- storage
+        |   |-- playerProgress.ts
         |   `-- userPreferences.ts
         |-- themes
         |   `-- boardThemes.ts
@@ -162,14 +175,9 @@ Important : pour le Play Store, utiliser le fichier `.aab` signe plutot que l'AP
 
 ## Signature Android
 
-La release Android utilise une cle d'upload locale :
+La release Android utilise une cle d'upload locale et un fichier de proprietes de signature.
 
-```txt
-ChessElite/android/keystores/chess-elite-upload-key.p12
-ChessElite/android/signing.properties
-```
-
-Ces fichiers sont ignores par `ChessElite/android/.gitignore`, car ils contiennent la cle de signature et les mots de passe.
+Ces fichiers ne doivent jamais etre publies sur GitHub. Ils sont ignores par la configuration Git, car ils contiennent la cle de signature et les mots de passe.
 
 Tres important : faire une sauvegarde privee de ces deux fichiers. Ils permettent de signer les prochaines versions envoyees au Play Store. Sans cette cle d'upload, il faudra demander une reinitialisation de cle dans la Play Console.
 
@@ -625,7 +633,7 @@ Criteres d'acceptation :
 Validation en cours :
 
 - `npx tsc --noEmit` : OK.
-- `npx expo install --check` : OK apres mise a jour de `expo` vers `~56.0.13` et `expo-splash-screen` vers `~56.0.11`.
+- `npx expo install --check` : OK apres mise a jour de `expo` vers `~56.0.19`, `expo-audio` vers `~56.0.13` et `expo-splash-screen` vers `~56.0.14`.
 - `.\gradlew.bat app:assembleRelease -x lint -x test --console=plain` : OK, APK release genere.
 - Apres wipe data et relance de l'emulateur : `adb install -r android\app\build\outputs\apk\release\app-release.apk` OK.
 - Accueil portrait : OK, progression V1.1 et boutons principaux visibles.
@@ -698,9 +706,9 @@ Avant chaque APK important, verifier :
 
 ## Prochaines priorites
 
-1. Finaliser et publier la V1.0 sur une piste de test interne Play Store.
-2. Demarrer la V1.1 par le ticket `1.1.1` : modele `PlayerProgress` et stockage local.
-3. Enchainer avec XP / niveaux, puis skins debloquables.
+1. Finaliser le test manuel d'une partie complete pour valider stats, XP, defis et deblocage de skins.
+2. Generer le build V1.1 final, puis produire l'AAB signe.
+3. Envoyer l'AAB sur une piste de test interne Google Play.
 
 ## Notes techniques
 
