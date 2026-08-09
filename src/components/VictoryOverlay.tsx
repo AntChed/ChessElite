@@ -17,6 +17,10 @@ type OverlayProgressSummary = {
   completedChallengesTitle: string;
   emptyLabel: string;
   levelLabel: string;
+  statItems: Array<{
+    label: string;
+    value: string;
+  }>;
   title: string;
   unlockedSkinLabels: string[];
   unlockedSkinsTitle: string;
@@ -25,15 +29,11 @@ type OverlayProgressSummary = {
 
 type VictoryOverlayProps = {
   closeLabel: string;
+  emptyProgressLabel?: string;
   newGameLabel: string;
   onClose: () => void;
   onNewGame: () => void;
-  onOpenSkins?: () => void;
-  onOpenStats?: () => void;
-  openSkinsLabel?: string;
-  openStatsLabel?: string;
   progressSummary?: OverlayProgressSummary | null;
-  savingProgressLabel?: string;
   subtitle: string;
   title: string;
   variant?: 'defeat' | 'victory';
@@ -78,15 +78,11 @@ const overlayPalettes = {
 
 export function VictoryOverlay({
   closeLabel,
+  emptyProgressLabel,
   newGameLabel,
   onClose,
   onNewGame,
-  onOpenSkins,
-  onOpenStats,
-  openSkinsLabel,
-  openStatsLabel,
   progressSummary,
-  savingProgressLabel,
   subtitle,
   title,
   variant = 'victory',
@@ -354,6 +350,16 @@ export function VictoryOverlay({
             {progressSummary ? (
               <>
                 <Text style={styles.rewardTitle}>{progressSummary.title}</Text>
+                <View style={styles.matchStatsGrid}>
+                  {progressSummary.statItems.map((item) => (
+                    <View key={item.label} style={styles.matchStat}>
+                      <Text style={[styles.matchStatValue, { color: palette.winner }]}>{item.value}</Text>
+                      <Text numberOfLines={1} style={styles.matchStatLabel}>
+                        {item.label}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
                 <View style={styles.rewardStatsRow}>
                   <View style={styles.rewardStat}>
                     <Text style={[styles.rewardStatValue, { color: palette.winner }]}>
@@ -388,7 +394,7 @@ export function VictoryOverlay({
                 ) : null}
               </>
             ) : (
-              <Text style={styles.rewardEmpty}>{savingProgressLabel}</Text>
+              <Text style={styles.rewardEmpty}>{emptyProgressLabel}</Text>
             )}
           </View>
           <Pressable
@@ -403,18 +409,6 @@ export function VictoryOverlay({
           >
             <Text style={[styles.newGameText, { color: palette.buttonText }]}>{newGameLabel}</Text>
           </Pressable>
-          <View style={styles.secondaryActions}>
-            {onOpenSkins && openSkinsLabel ? (
-              <Pressable onPress={onOpenSkins} style={styles.secondaryAction}>
-                <Text style={styles.secondaryActionText}>{openSkinsLabel}</Text>
-              </Pressable>
-            ) : null}
-            {onOpenStats && openStatsLabel ? (
-              <Pressable onPress={onOpenStats} style={styles.secondaryAction}>
-                <Text style={styles.secondaryActionText}>{openStatsLabel}</Text>
-              </Pressable>
-            ) : null}
-          </View>
         </Animated.View>
       </Animated.View>
     </Modal>
@@ -470,6 +464,36 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 28,
     width: 210,
+  },
+  matchStat: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(5, 6, 8, 0.28)',
+    borderColor: 'rgba(245, 239, 230, 0.1)',
+    borderRadius: 6,
+    borderWidth: 1,
+    flex: 1,
+    minHeight: 58,
+    paddingHorizontal: 6,
+    paddingVertical: 8,
+  },
+  matchStatLabel: {
+    color: 'rgba(245, 239, 230, 0.58)',
+    fontSize: 9,
+    fontWeight: '900',
+    marginTop: 4,
+    textAlign: 'center',
+    textTransform: 'uppercase',
+  },
+  matchStatsGrid: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+    width: '100%',
+  },
+  matchStatValue: {
+    fontSize: 18,
+    fontWeight: '900',
+    textAlign: 'center',
   },
   newGameButton: {
     borderRadius: 6,
@@ -561,28 +585,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '900',
     textAlign: 'center',
-    textTransform: 'uppercase',
-  },
-  secondaryAction: {
-    alignItems: 'center',
-    borderColor: 'rgba(245, 239, 230, 0.18)',
-    borderRadius: 6,
-    borderWidth: 1,
-    flex: 1,
-    minHeight: 38,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  secondaryActions: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 12,
-    width: '100%',
-  },
-  secondaryActionText: {
-    color: '#f5efe6',
-    fontSize: 12,
-    fontWeight: '900',
     textTransform: 'uppercase',
   },
   subtitle: {

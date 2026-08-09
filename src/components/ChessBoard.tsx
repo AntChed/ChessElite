@@ -33,6 +33,7 @@ import {
   type BoardThemeId,
 } from '../themes/boardThemes';
 import {
+  applyCompletedGameResult,
   createDefaultPlayerProgress,
   loadPlayerProgress,
   recordCompletedGameWithSummary,
@@ -126,6 +127,14 @@ function formatClockTime(seconds: number) {
   return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
 }
 
+function getWinRatePercent(progress: PlayerProgress) {
+  if (progress.gamesPlayed === 0) {
+    return 0;
+  }
+
+  return Math.round((progress.wins / progress.gamesPlayed) * 100);
+}
+
 function getSquareCoordinates(square: Square) {
   const file = square[0];
   const rank = Number(square[1]);
@@ -143,9 +152,8 @@ type ChessBoardProps = {
   onAiLevelChange?: (aiLevel: AiLevel) => void;
   onCloseSettings?: () => void;
   onLanguageChange: (languageId: LanguageId) => void;
-  onOpenSkins?: () => void;
-  onOpenStats?: () => void;
   onPlayerProgressChange?: (progress: PlayerProgress) => void;
+  externalPlayerProgress?: PlayerProgress;
   settingsExpanded?: boolean;
 };
 
@@ -156,9 +164,8 @@ export function ChessBoard({
   onAiLevelChange,
   onCloseSettings,
   onLanguageChange,
-  onOpenSkins,
-  onOpenStats,
   onPlayerProgressChange,
+  externalPlayerProgress,
   settingsExpanded = false,
 }: ChessBoardProps) {
   const { width, height } = useWindowDimensions();
@@ -278,6 +285,24 @@ export function ChessBoard({
         completedChallengesTitle: t(languageId, 'overlay.completedChallenges'),
         emptyLabel: t(languageId, 'overlay.noExtraReward'),
         levelLabel: t(languageId, 'overlay.level', { level: completedGameSummary.nextProgress.level }),
+        statItems: [
+          {
+            label: t(languageId, 'stats.gamesPlayed'),
+            value: String(completedGameSummary.nextProgress.gamesPlayed),
+          },
+          {
+            label: t(languageId, 'stats.wins'),
+            value: String(completedGameSummary.nextProgress.wins),
+          },
+          {
+            label: t(languageId, 'stats.winRate'),
+            value: `${getWinRatePercent(completedGameSummary.nextProgress)}%`,
+          },
+          {
+            label: t(languageId, 'stats.currentStreak'),
+            value: String(completedGameSummary.nextProgress.currentWinStreak),
+          },
+        ],
         title: t(languageId, 'overlay.progressTitle'),
         unlockedSkinLabels: completedGameSummary.newlyUnlockedSkinIds.map((skinId) =>
           t(languageId, chessSkins[skinId].nameKey),
@@ -371,6 +396,18 @@ export function ChessBoard({
   }, [languageId, preferencesLoaded, selectedAiLevel, selectedPieceSkinId, selectedThemeId, soundEnabled]);
 
   useEffect(() => {
+    if (!progressLoaded || !externalPlayerProgress) {
+      return;
+    }
+
+    const selectedSkin = chessSkins[externalPlayerProgress.selectedSkinId] ?? chessSkins.classic;
+
+    setPlayerProgress(externalPlayerProgress);
+    setSelectedThemeId(selectedSkin.boardThemeId);
+    setSelectedPieceSkinId(selectedSkin.pieceSkinId);
+  }, [externalPlayerProgress, progressLoaded]);
+
+  useEffect(() => {
     if (
       !progressLoaded ||
       !completedGameResult ||
@@ -381,9 +418,20 @@ export function ChessBoard({
     }
 
     let isMounted = true;
+    const optimisticNextProgress = applyCompletedGameResult(playerProgress, completedGameResult);
 
     setRecordedOutcomeKey(completedGameKey);
-    setCompletedGameSummary(null);
+    setCompletedGameSummary({
+      newlyCompletedDailyChallengeIds: optimisticNextProgress.completedDailyChallengeIds.filter(
+        (challengeId) => !playerProgress.completedDailyChallengeIds.includes(challengeId),
+      ),
+      newlyUnlockedSkinIds: optimisticNextProgress.unlockedSkinIds.filter(
+        (skinId) => !playerProgress.unlockedSkinIds.includes(skinId),
+      ),
+      nextProgress: optimisticNextProgress,
+      previousProgress: playerProgress,
+      xpGained: Math.max(0, optimisticNextProgress.xp - playerProgress.xp),
+    });
 
     recordCompletedGameWithSummary(completedGameResult)
       .then((summary) => {
@@ -394,15 +442,20 @@ export function ChessBoard({
         }
       })
       .catch(() => {
-        if (isMounted) {
-          setRecordedOutcomeKey(null);
-        }
+        // Keep the optimistic summary visible if persistence fails.
       });
 
     return () => {
       isMounted = false;
     };
-  }, [completedGameKey, completedGameResult, onPlayerProgressChange, progressLoaded, recordedOutcomeKey]);
+  }, [
+    completedGameKey,
+    completedGameResult,
+    onPlayerProgressChange,
+    playerProgress,
+    progressLoaded,
+    recordedOutcomeKey,
+  ]);
 
   useEffect(() => {
     if (!isClockEnabled || timeExpired || game.isGameOver()) {
@@ -726,16 +779,6 @@ export function ChessBoard({
 
   function handleOutcomeNewGame() {
     handleNewGame();
-  }
-
-  function handleOutcomeOpenSkins() {
-    handleCloseOutcomeOverlay();
-    onOpenSkins?.();
-  }
-
-  function handleOutcomeOpenStats() {
-    handleCloseOutcomeOverlay();
-    onOpenStats?.();
   }
 
   const settingsContent = (
@@ -1119,15 +1162,11 @@ export function ChessBoard({
           languageId,
           outcomeVariant === 'defeat' ? 'accessibility.closeDefeat' : 'accessibility.closeVictory',
         )}
+        emptyProgressLabel={t(languageId, 'overlay.noExtraReward')}
         newGameLabel={t(languageId, 'newGame')}
         onClose={handleCloseOutcomeOverlay}
         onNewGame={handleOutcomeNewGame}
-        onOpenSkins={onOpenSkins ? handleOutcomeOpenSkins : undefined}
-        onOpenStats={onOpenStats ? handleOutcomeOpenStats : undefined}
-        openSkinsLabel={t(languageId, 'home.skins')}
-        openStatsLabel={t(languageId, 'home.statsButton')}
         progressSummary={outcomeProgressSummary}
-        savingProgressLabel={t(languageId, 'overlay.savingProgress')}
         subtitle={outcomeSubtitle}
         title={t(languageId, outcomeVariant === 'defeat' ? 'defeat.title' : 'victory.title')}
         variant={outcomeVariant}

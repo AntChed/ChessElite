@@ -30,9 +30,11 @@ Statut actuel :
 - Themes de plateau : Classic, Dark, Neon, Gaming.
 - Skins de pieces : Classic, Pixel, Medieval, Future, Cartoon.
 - Sauvegarde des preferences avec AsyncStorage.
-- Ecran d'accueil avec choix 2 joueurs ou solo contre IA, splash screen, loader, sons et vibrations.
+- Ecran d'accueil allege avec choix solo contre IA, 2 joueurs, acces Skins et Stats.
 - Transition animee noir et or entre l'accueil et le plateau, sans rechargement visible de la home.
-- Ecran de jeu simplifie avec actions principales visibles, reglages ouverts depuis la roue crantee du header et historique replie dans `Moves`.
+- Ecran de jeu simplifie avec actions principales visibles, progression ouverte depuis le header, reglages ouverts depuis la roue crantee et historique replie dans `Moves`.
+- Navigation contextuelle : `Skins` et `Stats` reviennent vers la home ou vers la partie en cours selon leur point d'ouverture.
+- Ecran de fin de partie anime avec statistiques de progression et etat de sauvegarde corrige.
 - APK Android genere, installe et valide sur emulateur puis telephone.
 
 ## Stack
@@ -539,6 +541,8 @@ Criteres d'acceptation :
 
 Objectif : transformer la home en tableau de bord simple.
 
+Adaptation UX actuelle : la home reste volontairement legere. Elle affiche l'identite Chess Elite, le niveau / XP en version compacte, les boutons `Solo vs AI` et `2 players`, puis les acces `Skins` et `Stats`. Les details de progression, statistiques rapides, skin actif et defis quotidiens sont regroupes dans une modale `Progression` depuis le header de la vue plateau. Quand `Skins` ou `Stats` sont ouverts depuis une partie, le retour ramene sur le plateau et la partie reste montee en arriere-plan.
+
 Contenu cible :
 
 ```txt
@@ -576,14 +580,15 @@ Victoire !
 
 +20 XP
 Defi termine : Gagne une partie
+Parties jouees : 12
+Victoires : 8
+Taux de victoire : 67 %
 Serie actuelle : 3 victoires
 
 Nouveau skin bientot debloque :
 Neon Blue - 2 / 3 victoires
 
 Rejouer
-Changer de skin
-Voir les stats
 ```
 
 En cas de defaite :
@@ -594,8 +599,12 @@ Defaite
 +5 XP pour la partie jouee
 Tu progresses quand meme.
 
+Parties jouees : 12
+Victoires : 8
+Taux de victoire : 67 %
+Serie actuelle : 0
+
 Rejouer
-Voir les stats
 ```
 
 Criteres d'acceptation :
@@ -604,8 +613,9 @@ Criteres d'acceptation :
 - l'XP gagnee est visible,
 - les defis termines sont visibles,
 - les skins debloques sont visibles,
+- des statistiques utiles sont visibles directement dans l'overlay,
 - le joueur peut rejouer directement,
-- le joueur peut aller vers `Skins` ou `Statistiques`.
+- l'overlay ne reste jamais bloque sur un message de sauvegarde.
 
 ### Etape 9 - Polish et tests
 
@@ -641,7 +651,7 @@ Validation en cours :
 - Plateau portrait : OK, plateau, historique, horloge et actions visibles.
 - Plateau paysage : OK, plateau agrandi a gauche, header et controles a droite.
 - Persistance locale : OK sur les preferences, changement de langue vers francais conserve apres fermeture forcee et relance.
-- A finaliser avant AAB : refaire une partie complete pour confirmer stats, XP, defis et deblocage de skins sur un scenario reel.
+- Test utilisateur recent : partie complete OK, stats, XP, defis et overlay de fin de partie valides dans l'application.
 
 ### Tickets V1.1
 
@@ -657,8 +667,8 @@ Validation en cours :
 | 1.1.8 | Defis quotidiens locaux | Should | Validee TypeScript |
 | 1.1.9 | Home V1.1 avec progression | Should | Validee TypeScript |
 | 1.1.10 | Overlay fin de partie enrichi | Must | Validee TypeScript |
-| 1.1.11 | Tests portrait / paysage / persistence | Must | En cours - emulateur OK apres wipe, partie complete a revalider |
-| 1.1.12 | Build APK puis AAB V1.1 | Must | A faire |
+| 1.1.11 | Tests portrait / paysage / persistence | Must | Validee utilisateur |
+| 1.1.12 | Build APK puis AAB V1.1 | Must | APK release OK, AAB a faire |
 
 ## Fonctionnalites MVP validees
 
@@ -699,6 +709,10 @@ Avant chaque APK important, verifier :
 - capture simple,
 - changement de theme,
 - changement de skin,
+- ouverture de `Skins` depuis la home puis retour vers la home,
+- ouverture de `Stats` depuis la home puis retour vers la home,
+- ouverture de `Skins` depuis la modale `Progression` du plateau puis retour vers la partie en cours,
+- ouverture de `Stats` depuis la modale `Progression` du plateau puis retour vers la partie en cours,
 - fermeture puis relance pour valider la persistance,
 - nouvelle partie,
 - promotion,
@@ -706,9 +720,9 @@ Avant chaque APK important, verifier :
 
 ## Prochaines priorites
 
-1. Finaliser le test manuel d'une partie complete pour valider stats, XP, defis et deblocage de skins.
-2. Generer le build V1.1 final, puis produire l'AAB signe.
-3. Envoyer l'AAB sur une piste de test interne Google Play.
+1. Generer l'AAB signe V1.1 pour Google Play.
+2. Envoyer l'AAB sur une piste de test interne Google Play.
+3. Installer la version de test interne et refaire le parcours critique complet.
 
 ## Notes techniques
 

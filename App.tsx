@@ -31,12 +31,15 @@ SplashScreen.preventAutoHideAsync();
 
 const minimumLoadingTime = 1800;
 type AppScreen = 'game' | 'home' | 'skins' | 'stats';
+type ReturnScreen = 'game' | 'home';
 
 export default function App() {
   const [isAppReady, setIsAppReady] = useState(false);
   const [showLoadingScreen, setShowLoadingScreen] = useState(true);
   const [screen, setScreen] = useState<AppScreen>('home');
+  const [secondaryReturnScreen, setSecondaryReturnScreen] = useState<ReturnScreen>('home');
   const [aiLevel, setAiLevel] = useState<AiLevel>(1);
+  const [gameSessionId, setGameSessionId] = useState(0);
   const [initialOpponentMode, setInitialOpponentMode] = useState<OpponentMode>(0);
   const [isTransitionVisible, setIsTransitionVisible] = useState(false);
   const [languageId, setLanguageId] = useState<LanguageId>(defaultLanguageId);
@@ -165,10 +168,23 @@ export default function App() {
   const startGame = useCallback(
     (opponentMode: OpponentMode) => {
       setInitialOpponentMode(opponentMode);
+      setGameSessionId((currentId) => currentId + 1);
       navigateTo('game');
     },
     [navigateTo],
   );
+
+  const openSecondaryScreen = useCallback(
+    (nextScreen: 'skins' | 'stats') => {
+      setSecondaryReturnScreen(screen === 'game' ? 'game' : 'home');
+      navigateTo(nextScreen);
+    },
+    [navigateTo, screen],
+  );
+
+  const closeSecondaryScreen = useCallback(() => {
+    navigateTo(secondaryReturnScreen);
+  }, [navigateTo, secondaryReturnScreen]);
 
   useEffect(() => {
     if (screen === 'home') {
@@ -176,12 +192,17 @@ export default function App() {
     }
 
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (screen === 'skins' || screen === 'stats') {
+        closeSecondaryScreen();
+        return true;
+      }
+
       navigateTo('home');
       return true;
     });
 
     return () => subscription.remove();
-  }, [navigateTo, screen]);
+  }, [closeSecondaryScreen, navigateTo, screen]);
 
   useEffect(() => {
     if (screen !== 'home' || showLoadingScreen) {
@@ -221,6 +242,10 @@ export default function App() {
     );
   }
 
+  const shouldRenderGame =
+    gameSessionId > 0 &&
+    (screen === 'game' || ((screen === 'skins' || screen === 'stats') && secondaryReturnScreen === 'game'));
+
   return (
     <View style={styles.screen}>
       <Animated.View
@@ -230,41 +255,59 @@ export default function App() {
         ]}
       >
         <StatusBar style="light" />
-        {screen === 'home' ? (
-          <HomeScreen
-            aiLevel={aiLevel}
-            languageId={languageId}
-            onOpenSkins={() => navigateTo('skins')}
-            onOpenStats={() => navigateTo('stats')}
-            onStartAiGame={() => startGame(aiLevel)}
-            onStartLocalGame={() => startGame(0)}
-            playerProgress={playerProgress}
-          />
-        ) : screen === 'game' ? (
-          <BoardScreen
-            initialOpponentMode={initialOpponentMode}
-            languageId={languageId}
-            onAiLevelChange={setAiLevel}
-            onBack={() => navigateTo('home')}
-            onOpenSkins={() => navigateTo('skins')}
-            onOpenStats={() => navigateTo('stats')}
-            onLanguageChange={setLanguageId}
-            onPlayerProgressChange={setPlayerProgress}
-          />
-        ) : screen === 'skins' ? (
-          <SkinsScreen
-            languageId={languageId}
-            onBack={() => navigateTo('home')}
-            onPlayerProgressChange={setPlayerProgress}
-            playerProgress={playerProgress}
-          />
-        ) : (
-          <StatsScreen
-            languageId={languageId}
-            onBack={() => navigateTo('home')}
-            playerProgress={playerProgress}
-          />
-        )}
+        <View style={styles.routeHost}>
+          {screen === 'home' ? (
+            <View style={styles.routeLayer}>
+              <HomeScreen
+                aiLevel={aiLevel}
+                languageId={languageId}
+                onOpenSkins={() => openSecondaryScreen('skins')}
+                onOpenStats={() => openSecondaryScreen('stats')}
+                onStartAiGame={() => startGame(aiLevel)}
+                onStartLocalGame={() => startGame(0)}
+                playerProgress={playerProgress}
+              />
+            </View>
+          ) : null}
+          {shouldRenderGame ? (
+            <View
+              key={`game-${gameSessionId}`}
+              pointerEvents={screen === 'game' ? 'auto' : 'none'}
+              style={[styles.routeLayer, screen === 'game' ? null : styles.inactiveRouteLayer]}
+            >
+              <BoardScreen
+                initialOpponentMode={initialOpponentMode}
+                languageId={languageId}
+                onAiLevelChange={setAiLevel}
+                onBack={() => navigateTo('home')}
+                onOpenSkins={() => openSecondaryScreen('skins')}
+                onOpenStats={() => openSecondaryScreen('stats')}
+                onLanguageChange={setLanguageId}
+                onPlayerProgressChange={setPlayerProgress}
+                playerProgress={playerProgress}
+              />
+            </View>
+          ) : null}
+          {screen === 'skins' ? (
+            <View style={styles.routeLayer}>
+              <SkinsScreen
+                languageId={languageId}
+                onBack={closeSecondaryScreen}
+                onPlayerProgressChange={setPlayerProgress}
+                playerProgress={playerProgress}
+              />
+            </View>
+          ) : null}
+          {screen === 'stats' ? (
+            <View style={styles.routeLayer}>
+              <StatsScreen
+                languageId={languageId}
+                onBack={closeSecondaryScreen}
+                playerProgress={playerProgress}
+              />
+            </View>
+          ) : null}
+        </View>
       </Animated.View>
       {isTransitionVisible ? (
         <Animated.View
@@ -352,6 +395,9 @@ const styles = StyleSheet.create({
   animatedScreen: {
     flex: 1,
   },
+  inactiveRouteLayer: {
+    opacity: 0,
+  },
   loadingFill: {
     backgroundColor: '#d7a950',
     borderRadius: 999,
@@ -391,6 +437,16 @@ const styles = StyleSheet.create({
   screen: {
     backgroundColor: '#121417',
     flex: 1,
+  },
+  routeHost: {
+    flex: 1,
+  },
+  routeLayer: {
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
   },
   transitionGlow: {
     backgroundColor: 'rgba(215, 169, 80, 0.24)',
