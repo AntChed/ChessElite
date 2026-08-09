@@ -17,6 +17,7 @@ import type { Color, Move, PieceSymbol, Square } from 'chess.js';
 import { ChessPiece } from './ChessPiece';
 import { ChessSquare } from './ChessSquare';
 import { VictoryOverlay } from './VictoryOverlay';
+import { getDailyChallengeById } from '../challenges/dailyChallenges';
 import { aiLevelList, selectAiMove, type AiLevel } from '../game/ai';
 import { createGameFromFen, createInitialGame } from '../game/engine';
 import { languageOptions, t, type LanguageId } from '../i18n/translations';
@@ -34,8 +35,9 @@ import {
 import {
   createDefaultPlayerProgress,
   loadPlayerProgress,
-  recordCompletedGame,
+  recordCompletedGameWithSummary,
   savePlayerProgress,
+  type CompletedGameProgressSummary,
   type CompletedGameResult,
   type PlayerProgress,
 } from '../storage/playerProgress';
@@ -141,6 +143,8 @@ type ChessBoardProps = {
   onAiLevelChange?: (aiLevel: AiLevel) => void;
   onCloseSettings?: () => void;
   onLanguageChange: (languageId: LanguageId) => void;
+  onOpenSkins?: () => void;
+  onOpenStats?: () => void;
   onPlayerProgressChange?: (progress: PlayerProgress) => void;
   settingsExpanded?: boolean;
 };
@@ -152,6 +156,8 @@ export function ChessBoard({
   onAiLevelChange,
   onCloseSettings,
   onLanguageChange,
+  onOpenSkins,
+  onOpenStats,
   onPlayerProgressChange,
   settingsExpanded = false,
 }: ChessBoardProps) {
@@ -180,6 +186,7 @@ export function ChessBoard({
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [dismissedOutcomeKey, setDismissedOutcomeKey] = useState<string | null>(null);
   const [playerProgress, setPlayerProgress] = useState<PlayerProgress>(() => createDefaultPlayerProgress());
+  const [completedGameSummary, setCompletedGameSummary] = useState<CompletedGameProgressSummary | null>(null);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [progressLoaded, setProgressLoaded] = useState(false);
   const [recordedOutcomeKey, setRecordedOutcomeKey] = useState<string | null>(null);
@@ -262,6 +269,23 @@ export function ChessBoard({
           : winningOutcome.reasonKey,
       )
     : '';
+  const outcomeProgressSummary = completedGameSummary
+    ? {
+        completedChallengeLabels: completedGameSummary.newlyCompletedDailyChallengeIds
+          .map((challengeId) => getDailyChallengeById(challengeId))
+          .filter((challenge) => challenge !== null)
+          .map((challenge) => t(languageId, challenge.titleKey)),
+        completedChallengesTitle: t(languageId, 'overlay.completedChallenges'),
+        emptyLabel: t(languageId, 'overlay.noExtraReward'),
+        levelLabel: t(languageId, 'overlay.level', { level: completedGameSummary.nextProgress.level }),
+        title: t(languageId, 'overlay.progressTitle'),
+        unlockedSkinLabels: completedGameSummary.newlyUnlockedSkinIds.map((skinId) =>
+          t(languageId, chessSkins[skinId].nameKey),
+        ),
+        unlockedSkinsTitle: t(languageId, 'overlay.unlockedSkins'),
+        xpGainedLabel: t(languageId, 'overlay.xpGained', { xp: completedGameSummary.xpGained }),
+      }
+    : null;
   const completedGameResult = useMemo<CompletedGameResult | null>(() => {
     if (winningOutcome) {
       return {
@@ -359,12 +383,14 @@ export function ChessBoard({
     let isMounted = true;
 
     setRecordedOutcomeKey(completedGameKey);
+    setCompletedGameSummary(null);
 
-    recordCompletedGame(completedGameResult)
-      .then((nextProgress) => {
+    recordCompletedGameWithSummary(completedGameResult)
+      .then((summary) => {
         if (isMounted) {
-          setPlayerProgress(nextProgress);
-          onPlayerProgressChange?.(nextProgress);
+          setCompletedGameSummary(summary);
+          setPlayerProgress(summary.nextProgress);
+          onPlayerProgressChange?.(summary.nextProgress);
         }
       })
       .catch(() => {
@@ -621,6 +647,7 @@ export function ChessBoard({
 
   function handleNewGame() {
     setAnimatedMove(null);
+    setCompletedGameSummary(null);
     setDismissedOutcomeKey(null);
     setRecordedOutcomeKey(null);
     setGameFen(createInitialGame().fen());
@@ -643,6 +670,7 @@ export function ChessBoard({
     const previousSnapshot = gameSnapshots[gameSnapshots.length - undoMoveCount];
 
     setAnimatedMove(null);
+    setCompletedGameSummary(null);
     setDismissedOutcomeKey(null);
     setRecordedOutcomeKey(null);
     setGameFen(previousSnapshot.fen);
@@ -659,6 +687,7 @@ export function ChessBoard({
 
   function handleClockModeChange(nextClockModeId: ClockModeId) {
     setClockModeId(nextClockModeId);
+    setCompletedGameSummary(null);
     setDismissedOutcomeKey(null);
     setRecordedOutcomeKey(null);
     setClockTimes(createClockTimes(nextClockModeId));
@@ -697,6 +726,16 @@ export function ChessBoard({
 
   function handleOutcomeNewGame() {
     handleNewGame();
+  }
+
+  function handleOutcomeOpenSkins() {
+    handleCloseOutcomeOverlay();
+    onOpenSkins?.();
+  }
+
+  function handleOutcomeOpenStats() {
+    handleCloseOutcomeOverlay();
+    onOpenStats?.();
   }
 
   const settingsContent = (
@@ -1083,6 +1122,12 @@ export function ChessBoard({
         newGameLabel={t(languageId, 'newGame')}
         onClose={handleCloseOutcomeOverlay}
         onNewGame={handleOutcomeNewGame}
+        onOpenSkins={onOpenSkins ? handleOutcomeOpenSkins : undefined}
+        onOpenStats={onOpenStats ? handleOutcomeOpenStats : undefined}
+        openSkinsLabel={t(languageId, 'home.skins')}
+        openStatsLabel={t(languageId, 'home.statsButton')}
+        progressSummary={outcomeProgressSummary}
+        savingProgressLabel={t(languageId, 'overlay.savingProgress')}
         subtitle={outcomeSubtitle}
         title={t(languageId, outcomeVariant === 'defeat' ? 'defeat.title' : 'victory.title')}
         variant={outcomeVariant}

@@ -6,7 +6,12 @@ import {
   isChessSkinId,
   type ChessSkinId,
 } from '../skins/chessSkins';
-import { applySkinUnlocks } from '../skins/skinUnlocks';
+import { applySkinUnlocks, getNewlyUnlockedChessSkinIds } from '../skins/skinUnlocks';
+import {
+  applyDailyChallengeProgress,
+  getLocalDateKey,
+  resetDailyChallengesIfNeeded,
+} from '../challenges/dailyChallenges';
 
 const playerProgressStorageKey = '@chess-elite/player-progress';
 const currentSchemaVersion = 1;
@@ -20,6 +25,7 @@ export type PlayerProgress = {
   checks: number;
   completedDailyChallengeIds: string[];
   currentWinStreak: number;
+  dailyChallengeProgress: Record<string, number>;
   distinctPlayDates: string[];
   gamesPlayed: number;
   lastChallengeDate: string;
@@ -40,6 +46,14 @@ export type CompletedGameResult = {
   selectedSkinId: ChessSkinId;
 };
 
+export type CompletedGameProgressSummary = {
+  newlyCompletedDailyChallengeIds: string[];
+  newlyUnlockedSkinIds: ChessSkinId[];
+  nextProgress: PlayerProgress;
+  previousProgress: PlayerProgress;
+  xpGained: number;
+};
+
 export function createDefaultPlayerProgress(): PlayerProgress {
   return {
     bestWinStreak: 0,
@@ -47,6 +61,7 @@ export function createDefaultPlayerProgress(): PlayerProgress {
     checks: 0,
     completedDailyChallengeIds: [],
     currentWinStreak: 0,
+    dailyChallengeProgress: {},
     distinctPlayDates: [],
     gamesPlayed: 0,
     lastChallengeDate: '',
@@ -121,22 +136,35 @@ export function applyCompletedGameResult(
   const completedDate = isDateKey(result.completedDate) ? result.completedDate : getLocalDateKey();
   const distinctPlayDates = Array.from(new Set([...progress.distinctPlayDates, completedDate]));
 
+  const nextProgress = applyDailyChallengeProgress(
+    {
+      ...progress,
+      bestWinStreak: Math.max(progress.bestWinStreak, nextWinStreak),
+      checkmates: progress.checkmates + (result.checkmate ? 1 : 0),
+      checks: progress.checks + result.checks,
+      currentWinStreak: nextWinStreak,
+      distinctPlayDates,
+      gamesPlayed: progress.gamesPlayed + 1,
+      level: getLevelFromXp(nextXp),
+      losses: progress.losses + (result.result === 'loss' ? 1 : 0),
+      schemaVersion: currentSchemaVersion,
+      selectedSkinId: result.selectedSkinId,
+      unlockedSkinIds: normalizeUnlockedSkinIds(progress.unlockedSkinIds),
+      wins: progress.wins + (result.result === 'win' ? 1 : 0),
+      xp: nextXp,
+    },
+    result,
+    completedDate,
+  );
+
   return applySkinUnlocks({
-    ...progress,
-    bestWinStreak: Math.max(progress.bestWinStreak, nextWinStreak),
-    checkmates: progress.checkmates + (result.checkmate ? 1 : 0),
-    checks: progress.checks + result.checks,
-    currentWinStreak: nextWinStreak,
-    distinctPlayDates,
-    gamesPlayed: progress.gamesPlayed + 1,
-    level: getLevelFromXp(nextXp),
-    losses: progress.losses + (result.result === 'loss' ? 1 : 0),
-    schemaVersion: currentSchemaVersion,
-    selectedSkinId: result.selectedSkinId,
-    unlockedSkinIds: normalizeUnlockedSkinIds(progress.unlockedSkinIds),
-    wins: progress.wins + (result.result === 'win' ? 1 : 0),
-    xp: nextXp,
+    ...nextProgress,
+    level: getLevelFromXp(nextProgress.xp),
   });
+}
+
+export function isDateKey(value: unknown): value is string {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
 export async function loadPlayerProgress(): Promise<PlayerProgress> {
@@ -158,12 +186,28 @@ export async function savePlayerProgress(progress: PlayerProgress) {
 }
 
 export async function recordCompletedGame(result: CompletedGameResult) {
+  const summary = await recordCompletedGameWithSummary(result);
+
+  return summary.nextProgress;
+}
+
+export async function recordCompletedGameWithSummary(
+  result: CompletedGameResult,
+): Promise<CompletedGameProgressSummary> {
   const currentProgress = await loadPlayerProgress();
   const nextProgress = applyCompletedGameResult(currentProgress, result);
 
   await savePlayerProgress(nextProgress);
 
-  return nextProgress;
+  return {
+    newlyCompletedDailyChallengeIds: nextProgress.completedDailyChallengeIds.filter(
+      (challengeId) => !currentProgress.completedDailyChallengeIds.includes(challengeId),
+    ),
+    newlyUnlockedSkinIds: getNewlyUnlockedChessSkinIds(currentProgress, nextProgress),
+    nextProgress,
+    previousProgress: currentProgress,
+    xpGained: Math.max(0, nextProgress.xp - currentProgress.xp),
+  };
 }
 
 function normalizePlayerProgress(value: unknown): PlayerProgress {
@@ -179,29 +223,35 @@ function normalizePlayerProgress(value: unknown): PlayerProgress {
     ? rawProgress.selectedSkinId
     : fallback.selectedSkinId;
 
-  return applySkinUnlocks({
-    bestWinStreak: toNonNegativeInteger(rawProgress.bestWinStreak, fallback.bestWinStreak),
-    checkmates: toNonNegativeInteger(rawProgress.checkmates, fallback.checkmates),
-    checks: toNonNegativeInteger(rawProgress.checks, fallback.checks),
-    completedDailyChallengeIds: toStringArray(
-      rawProgress.completedDailyChallengeIds,
-      fallback.completedDailyChallengeIds,
-    ),
-    currentWinStreak: toNonNegativeInteger(rawProgress.currentWinStreak, fallback.currentWinStreak),
-    distinctPlayDates: toDateKeyArray(rawProgress.distinctPlayDates, fallback.distinctPlayDates),
-    gamesPlayed: toNonNegativeInteger(rawProgress.gamesPlayed, fallback.gamesPlayed),
-    lastChallengeDate:
-      typeof rawProgress.lastChallengeDate === 'string'
-        ? rawProgress.lastChallengeDate
-        : fallback.lastChallengeDate,
-    level: getLevelFromXp(xp),
-    losses: toNonNegativeInteger(rawProgress.losses, fallback.losses),
-    schemaVersion: currentSchemaVersion,
-    selectedSkinId,
-    unlockedSkinIds: normalizeUnlockedSkinIds(rawProgress.unlockedSkinIds),
-    wins: toNonNegativeInteger(rawProgress.wins, fallback.wins),
-    xp,
-  });
+  return applySkinUnlocks(
+    resetDailyChallengesIfNeeded({
+      bestWinStreak: toNonNegativeInteger(rawProgress.bestWinStreak, fallback.bestWinStreak),
+      checkmates: toNonNegativeInteger(rawProgress.checkmates, fallback.checkmates),
+      checks: toNonNegativeInteger(rawProgress.checks, fallback.checks),
+      completedDailyChallengeIds: toStringArray(
+        rawProgress.completedDailyChallengeIds,
+        fallback.completedDailyChallengeIds,
+      ),
+      currentWinStreak: toNonNegativeInteger(rawProgress.currentWinStreak, fallback.currentWinStreak),
+      dailyChallengeProgress: toNonNegativeIntegerRecord(
+        rawProgress.dailyChallengeProgress,
+        fallback.dailyChallengeProgress,
+      ),
+      distinctPlayDates: toDateKeyArray(rawProgress.distinctPlayDates, fallback.distinctPlayDates),
+      gamesPlayed: toNonNegativeInteger(rawProgress.gamesPlayed, fallback.gamesPlayed),
+      lastChallengeDate:
+        typeof rawProgress.lastChallengeDate === 'string'
+          ? rawProgress.lastChallengeDate
+          : fallback.lastChallengeDate,
+      level: getLevelFromXp(xp),
+      losses: toNonNegativeInteger(rawProgress.losses, fallback.losses),
+      schemaVersion: currentSchemaVersion,
+      selectedSkinId,
+      unlockedSkinIds: normalizeUnlockedSkinIds(rawProgress.unlockedSkinIds),
+      wins: toNonNegativeInteger(rawProgress.wins, fallback.wins),
+      xp,
+    }),
+  );
 }
 
 function normalizeUnlockedSkinIds(value: unknown) {
@@ -210,6 +260,20 @@ function normalizeUnlockedSkinIds(value: unknown) {
 
 function toNonNegativeInteger(value: unknown, fallback: number) {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : fallback;
+}
+
+function toNonNegativeIntegerRecord(value: unknown, fallback: Record<string, number>) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return fallback;
+  }
+
+  return Object.entries(value).reduce<Record<string, number>>((record, [key, item]) => {
+    if (typeof item === 'number' && Number.isFinite(item)) {
+      record[key] = Math.max(0, Math.floor(item));
+    }
+
+    return record;
+  }, {});
 }
 
 function toStringArray(value: unknown, fallback: string[]) {
@@ -222,16 +286,4 @@ function toChessSkinIdArray(value: unknown, fallback: ChessSkinId[]) {
 
 function toDateKeyArray(value: unknown, fallback: string[]) {
   return Array.isArray(value) && value.every(isDateKey) ? value : fallback;
-}
-
-function getLocalDateKey(date = new Date()) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-
-  return `${year}-${month}-${day}`;
-}
-
-function isDateKey(value: unknown): value is string {
-  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }

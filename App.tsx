@@ -246,6 +246,8 @@ export default function App() {
             languageId={languageId}
             onAiLevelChange={setAiLevel}
             onBack={() => navigateTo('home')}
+            onOpenSkins={() => navigateTo('skins')}
+            onOpenStats={() => navigateTo('stats')}
             onLanguageChange={setLanguageId}
             onPlayerProgressChange={setPlayerProgress}
           />

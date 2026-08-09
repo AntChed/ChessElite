@@ -22,6 +22,8 @@ type BoardScreenProps = {
   languageId: LanguageId;
   onAiLevelChange: (aiLevel: AiLevel) => void;
   onBack: () => void;
+  onOpenSkins: () => void;
+  onOpenStats: () => void;
   onLanguageChange: (languageId: LanguageId) => void;
   onPlayerProgressChange?: (progress: PlayerProgress) => void;
 };
@@ -31,6 +33,8 @@ export function BoardScreen({
   languageId,
   onAiLevelChange,
   onBack,
+  onOpenSkins,
+  onOpenStats,
   onLanguageChange,
   onPlayerProgressChange,
 }: BoardScreenProps) {
@@ -141,6 +145,8 @@ export function BoardScreen({
           onAiLevelChange={onAiLevelChange}
           onCloseSettings={handleCloseSettings}
           onLanguageChange={onLanguageChange}
+          onOpenSkins={onOpenSkins}
+          onOpenStats={onOpenStats}
           onPlayerProgressChange={onPlayerProgressChange}
           settingsExpanded={settingsExpanded}
         />

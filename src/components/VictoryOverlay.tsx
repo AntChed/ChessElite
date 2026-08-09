@@ -12,11 +12,28 @@ import {
   useWindowDimensions,
 } from 'react-native';
 
+type OverlayProgressSummary = {
+  completedChallengeLabels: string[];
+  completedChallengesTitle: string;
+  emptyLabel: string;
+  levelLabel: string;
+  title: string;
+  unlockedSkinLabels: string[];
+  unlockedSkinsTitle: string;
+  xpGainedLabel: string;
+};
+
 type VictoryOverlayProps = {
   closeLabel: string;
   newGameLabel: string;
   onClose: () => void;
   onNewGame: () => void;
+  onOpenSkins?: () => void;
+  onOpenStats?: () => void;
+  openSkinsLabel?: string;
+  openStatsLabel?: string;
+  progressSummary?: OverlayProgressSummary | null;
+  savingProgressLabel?: string;
   subtitle: string;
   title: string;
   variant?: 'defeat' | 'victory';
@@ -64,6 +81,12 @@ export function VictoryOverlay({
   newGameLabel,
   onClose,
   onNewGame,
+  onOpenSkins,
+  onOpenStats,
+  openSkinsLabel,
+  openStatsLabel,
+  progressSummary,
+  savingProgressLabel,
   subtitle,
   title,
   variant = 'victory',
@@ -327,6 +350,47 @@ export function VictoryOverlay({
           </Animated.Text>
           <Text style={[styles.winner, { color: palette.winner }]}>{winnerLabel}</Text>
           <Text style={styles.subtitle}>{subtitle}</Text>
+          <View style={styles.rewardPanel}>
+            {progressSummary ? (
+              <>
+                <Text style={styles.rewardTitle}>{progressSummary.title}</Text>
+                <View style={styles.rewardStatsRow}>
+                  <View style={styles.rewardStat}>
+                    <Text style={[styles.rewardStatValue, { color: palette.winner }]}>
+                      {progressSummary.xpGainedLabel}
+                    </Text>
+                    <Text style={styles.rewardStatLabel}>{progressSummary.levelLabel}</Text>
+                  </View>
+                </View>
+                {progressSummary.completedChallengeLabels.length > 0 ? (
+                  <View style={styles.rewardList}>
+                    <Text style={styles.rewardListTitle}>{progressSummary.completedChallengesTitle}</Text>
+                    {progressSummary.completedChallengeLabels.map((label) => (
+                      <Text key={label} style={styles.rewardItem}>
+                        {'\u2713'} {label}
+                      </Text>
+                    ))}
+                  </View>
+                ) : null}
+                {progressSummary.unlockedSkinLabels.length > 0 ? (
+                  <View style={styles.rewardList}>
+                    <Text style={styles.rewardListTitle}>{progressSummary.unlockedSkinsTitle}</Text>
+                    {progressSummary.unlockedSkinLabels.map((label) => (
+                      <Text key={label} style={styles.rewardItem}>
+                        {'\u2726'} {label}
+                      </Text>
+                    ))}
+                  </View>
+                ) : null}
+                {progressSummary.completedChallengeLabels.length === 0 &&
+                progressSummary.unlockedSkinLabels.length === 0 ? (
+                  <Text style={styles.rewardEmpty}>{progressSummary.emptyLabel}</Text>
+                ) : null}
+              </>
+            ) : (
+              <Text style={styles.rewardEmpty}>{savingProgressLabel}</Text>
+            )}
+          </View>
           <Pressable
             accessibilityLabel={newGameLabel}
             android_ripple={{ color: 'rgba(23, 17, 13, 0.16)' }}
@@ -339,6 +403,18 @@ export function VictoryOverlay({
           >
             <Text style={[styles.newGameText, { color: palette.buttonText }]}>{newGameLabel}</Text>
           </Pressable>
+          <View style={styles.secondaryActions}>
+            {onOpenSkins && openSkinsLabel ? (
+              <Pressable onPress={onOpenSkins} style={styles.secondaryAction}>
+                <Text style={styles.secondaryActionText}>{openSkinsLabel}</Text>
+              </Pressable>
+            ) : null}
+            {onOpenStats && openStatsLabel ? (
+              <Pressable onPress={onOpenStats} style={styles.secondaryAction}>
+                <Text style={styles.secondaryActionText}>{openStatsLabel}</Text>
+              </Pressable>
+            ) : null}
+          </View>
         </Animated.View>
       </Animated.View>
     </Modal>
@@ -397,7 +473,7 @@ const styles = StyleSheet.create({
   },
   newGameButton: {
     borderRadius: 6,
-    marginTop: 24,
+    marginTop: 18,
     minHeight: 48,
     minWidth: 178,
     paddingHorizontal: 24,
@@ -428,6 +504,86 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.38,
     shadowRadius: 18,
     width: 140,
+  },
+  rewardEmpty: {
+    color: 'rgba(245, 239, 230, 0.62)',
+    fontSize: 12,
+    fontWeight: '800',
+    marginTop: 10,
+    textAlign: 'center',
+  },
+  rewardItem: {
+    color: '#f5efe6',
+    fontSize: 12,
+    fontWeight: '800',
+    marginTop: 6,
+  },
+  rewardList: {
+    marginTop: 12,
+    width: '100%',
+  },
+  rewardListTitle: {
+    color: 'rgba(245, 239, 230, 0.58)',
+    fontSize: 10,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  rewardPanel: {
+    backgroundColor: 'rgba(245, 239, 230, 0.06)',
+    borderColor: 'rgba(215, 169, 80, 0.22)',
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 18,
+    padding: 14,
+    width: '100%',
+  },
+  rewardStat: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  rewardStatLabel: {
+    color: 'rgba(245, 239, 230, 0.64)',
+    fontSize: 11,
+    fontWeight: '900',
+    marginTop: 4,
+    textTransform: 'uppercase',
+  },
+  rewardStatsRow: {
+    flexDirection: 'row',
+    marginTop: 10,
+  },
+  rewardStatValue: {
+    fontSize: 24,
+    fontWeight: '900',
+  },
+  rewardTitle: {
+    color: '#d7a950',
+    fontSize: 11,
+    fontWeight: '900',
+    textAlign: 'center',
+    textTransform: 'uppercase',
+  },
+  secondaryAction: {
+    alignItems: 'center',
+    borderColor: 'rgba(245, 239, 230, 0.18)',
+    borderRadius: 6,
+    borderWidth: 1,
+    flex: 1,
+    minHeight: 38,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  secondaryActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+    width: '100%',
+  },
+  secondaryActionText: {
+    color: '#f5efe6',
+    fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase',
   },
   subtitle: {
     color: 'rgba(245, 239, 230, 0.72)',
