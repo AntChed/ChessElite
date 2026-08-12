@@ -42,6 +42,11 @@ import {
   type CompletedGameResult,
   type PlayerProgress,
 } from '../storage/playerProgress';
+import {
+  recordCompletedMatch,
+  type MatchHistoryEntry,
+  type MatchHistoryReason,
+} from '../storage/matchHistory';
 import { loadUserPreferences, saveUserPreferences } from '../storage/userPreferences';
 import { files, toSquare } from '../utils/coordinates';
 
@@ -152,6 +157,7 @@ type ChessBoardProps = {
   onAiLevelChange?: (aiLevel: AiLevel) => void;
   onCloseSettings?: () => void;
   onLanguageChange: (languageId: LanguageId) => void;
+  onMatchHistoryChange?: (history: MatchHistoryEntry[]) => void;
   onPlayerProgressChange?: (progress: PlayerProgress) => void;
   externalPlayerProgress?: PlayerProgress;
   settingsExpanded?: boolean;
@@ -164,6 +170,7 @@ export function ChessBoard({
   onAiLevelChange,
   onCloseSettings,
   onLanguageChange,
+  onMatchHistoryChange,
   onPlayerProgressChange,
   externalPlayerProgress,
   settingsExpanded = false,
@@ -184,6 +191,7 @@ export function ChessBoard({
   const [aiThinking, setAiThinking] = useState(false);
   const [clockModeId, setClockModeId] = useState<ClockModeId>('none');
   const [clockTimes, setClockTimes] = useState<PlayerClock>(() => createClockTimes('none'));
+  const [gameStartedAt, setGameStartedAt] = useState(() => Date.now());
   const [gameCheckCount, setGameCheckCount] = useState(0);
   const [timeExpired, setTimeExpired] = useState<'b' | 'w' | null>(null);
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
@@ -445,16 +453,48 @@ export function ChessBoard({
         // Keep the optimistic summary visible if persistence fails.
       });
 
+    recordCompletedMatch({
+      aiLevel: isAiEnabled ? selectedAiLevel : undefined,
+      clockModeId,
+      completedAt: new Date().toISOString(),
+      durationSeconds: Math.max(0, Math.round((Date.now() - gameStartedAt) / 1000)),
+      finalFen: gameFen,
+      mode: isAiEnabled ? 'soloAi' : 'twoPlayers',
+      moveCount: moveHistory.length,
+      moves: moveHistory,
+      reason: getMatchHistoryReason(),
+      result: completedGameResult.result,
+      selectedSkinId: selectedChessSkinId,
+      winner: winningOutcome?.winner ?? null,
+    })
+      .then((history) => {
+        if (isMounted) {
+          onMatchHistoryChange?.(history);
+        }
+      })
+      .catch(() => undefined);
+
     return () => {
       isMounted = false;
     };
   }, [
+    clockModeId,
     completedGameKey,
     completedGameResult,
+    game,
+    gameFen,
+    gameStartedAt,
+    isAiEnabled,
+    moveHistory,
+    onMatchHistoryChange,
     onPlayerProgressChange,
     playerProgress,
     progressLoaded,
     recordedOutcomeKey,
+    selectedAiLevel,
+    selectedChessSkinId,
+    timeExpired,
+    winningOutcome,
   ]);
 
   useEffect(() => {
@@ -548,6 +588,22 @@ export function ChessBoard({
     }
 
     return winner === 'w' ? 'win' : 'loss';
+  }
+
+  function getMatchHistoryReason(): MatchHistoryReason {
+    if (timeExpired) {
+      return 'timeOut';
+    }
+
+    if (game.isCheckmate()) {
+      return 'checkmate';
+    }
+
+    if (game.isStalemate()) {
+      return 'stalemate';
+    }
+
+    return 'draw';
   }
 
   function getGameStatusLabel() {
@@ -703,6 +759,7 @@ export function ChessBoard({
     setCompletedGameSummary(null);
     setDismissedOutcomeKey(null);
     setRecordedOutcomeKey(null);
+    setGameStartedAt(Date.now());
     setGameFen(createInitialGame().fen());
     setGameSnapshots([]);
     setMoveHistory([]);
@@ -743,6 +800,7 @@ export function ChessBoard({
     setCompletedGameSummary(null);
     setDismissedOutcomeKey(null);
     setRecordedOutcomeKey(null);
+    setGameStartedAt(Date.now());
     setClockTimes(createClockTimes(nextClockModeId));
     setTimeExpired(null);
     setAnimatedMove(null);

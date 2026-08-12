@@ -27,7 +27,11 @@ type StatItem = {
   value: string;
 };
 
-export function StatsScreen({ languageId, onBack, playerProgress }: StatsScreenProps) {
+export function StatsScreen({
+  languageId,
+  onBack,
+  playerProgress,
+}: StatsScreenProps) {
   const { width } = useWindowDimensions();
   const isWide = width >= 720;
   const levelProgress = getLevelProgress(playerProgress.xp);

@@ -25,6 +25,7 @@ import { ChessBoard, type OpponentMode } from '../components/ChessBoard';
 import { t, type LanguageId } from '../i18n/translations';
 import type { AiLevel } from '../game/ai';
 import { chessSkins } from '../skins/chessSkins';
+import type { MatchHistoryEntry } from '../storage/matchHistory';
 import { getLevelProgress, type PlayerProgress } from '../storage/playerProgress';
 
 type BoardScreenProps = {
@@ -32,9 +33,11 @@ type BoardScreenProps = {
   languageId: LanguageId;
   onAiLevelChange: (aiLevel: AiLevel) => void;
   onBack: () => void;
+  onOpenHistory: () => void;
   onOpenSkins: () => void;
   onOpenStats: () => void;
   onLanguageChange: (languageId: LanguageId) => void;
+  onMatchHistoryChange?: (history: MatchHistoryEntry[]) => void;
   onPlayerProgressChange?: (progress: PlayerProgress) => void;
   playerProgress: PlayerProgress;
 };
@@ -44,9 +47,11 @@ export function BoardScreen({
   languageId,
   onAiLevelChange,
   onBack,
+  onOpenHistory,
   onOpenSkins,
   onOpenStats,
   onLanguageChange,
+  onMatchHistoryChange,
   onPlayerProgressChange,
   playerProgress,
 }: BoardScreenProps) {
@@ -209,6 +214,7 @@ export function BoardScreen({
           onAiLevelChange={onAiLevelChange}
           onCloseSettings={handleCloseSettings}
           onLanguageChange={onLanguageChange}
+          onMatchHistoryChange={onMatchHistoryChange}
           onPlayerProgressChange={onPlayerProgressChange}
           settingsExpanded={settingsExpanded}
         />
@@ -323,6 +329,19 @@ export function BoardScreen({
               </View>
 
               <View style={styles.progressModalActions}>
+                <Pressable
+                  accessibilityLabel={t(languageId, 'accessibility.openHistory')}
+                  onPress={() => {
+                    setProgressExpanded(false);
+                    onOpenHistory();
+                  }}
+                  style={({ pressed }) => [
+                    styles.progressActionButton,
+                    pressed ? styles.progressActionButtonPressed : null,
+                  ]}
+                >
+                  <Text style={styles.progressActionButtonText}>{t(languageId, 'home.historyButton')}</Text>
+                </Pressable>
                 <Pressable
                   accessibilityLabel={t(languageId, 'accessibility.openSkins')}
                   onPress={() => {

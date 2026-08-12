@@ -20,6 +20,7 @@ import { getLevelProgress, type PlayerProgress } from '../storage/playerProgress
 type HomeScreenProps = {
   aiLevel: AiLevel;
   languageId: LanguageId;
+  onOpenHistory: () => void;
   onOpenSkins: () => void;
   onOpenStats: () => void;
   onStartAiGame: () => void;
@@ -69,6 +70,7 @@ function PlayerModeIcon({ count, tone }: PlayerModeIconProps) {
 export function HomeScreen({
   aiLevel,
   languageId,
+  onOpenHistory,
   onOpenSkins,
   onOpenStats,
   onStartAiGame,
@@ -101,6 +103,11 @@ export function HomeScreen({
   function handleOpenStats() {
     Haptics.selectionAsync().catch(() => undefined);
     onOpenStats();
+  }
+
+  function handleOpenHistory() {
+    Haptics.selectionAsync().catch(() => undefined);
+    onOpenHistory();
   }
 
   return (
@@ -181,6 +188,18 @@ export function HomeScreen({
           </View>
 
           <View style={[styles.progressActions, isLandscape ? styles.progressActionsLandscape : null]}>
+            <Pressable
+              accessibilityLabel={t(languageId, 'accessibility.openHistory')}
+              android_ripple={{ color: 'rgba(215, 169, 80, 0.18)' }}
+              onPress={handleOpenHistory}
+              style={({ pressed }) => [
+                styles.progressButton,
+                isLandscape ? styles.progressButtonLandscape : null,
+                pressed ? styles.progressButtonPressed : null,
+              ]}
+            >
+              <Text style={styles.progressButtonText}>{t(languageId, 'home.historyButton')}</Text>
+            </Pressable>
             <Pressable
               accessibilityLabel={t(languageId, 'accessibility.openSkins')}
               android_ripple={{ color: 'rgba(215, 169, 80, 0.18)' }}

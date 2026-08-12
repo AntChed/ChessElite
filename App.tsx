@@ -14,7 +14,9 @@ import {
 
 import { createInitialGame } from './src/game/engine';
 import { BoardScreen } from './src/screens/BoardScreen';
+import { GameReviewScreen } from './src/screens/GameReviewScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
+import { MatchHistoryScreen } from './src/screens/MatchHistoryScreen';
 import { SkinsScreen } from './src/screens/SkinsScreen';
 import { StatsScreen } from './src/screens/StatsScreen';
 import { defaultLanguageId, t, type LanguageId } from './src/i18n/translations';
@@ -23,6 +25,7 @@ import {
   loadPlayerProgress,
   type PlayerProgress,
 } from './src/storage/playerProgress';
+import { loadMatchHistory, type MatchHistoryEntry } from './src/storage/matchHistory';
 import { loadUserPreferences } from './src/storage/userPreferences';
 import type { OpponentMode } from './src/components/ChessBoard';
 import type { AiLevel } from './src/game/ai';
@@ -30,7 +33,7 @@ import type { AiLevel } from './src/game/ai';
 SplashScreen.preventAutoHideAsync();
 
 const minimumLoadingTime = 1800;
-type AppScreen = 'game' | 'home' | 'skins' | 'stats';
+type AppScreen = 'game' | 'history' | 'home' | 'review' | 'skins' | 'stats';
 type ReturnScreen = 'game' | 'home';
 
 export default function App() {
@@ -43,7 +46,9 @@ export default function App() {
   const [initialOpponentMode, setInitialOpponentMode] = useState<OpponentMode>(0);
   const [isTransitionVisible, setIsTransitionVisible] = useState(false);
   const [languageId, setLanguageId] = useState<LanguageId>(defaultLanguageId);
+  const [matchHistory, setMatchHistory] = useState<MatchHistoryEntry[]>([]);
   const [playerProgress, setPlayerProgress] = useState<PlayerProgress>(() => createDefaultPlayerProgress());
+  const [selectedMatchReviewId, setSelectedMatchReviewId] = useState<string | null>(null);
   const loadingProgress = useRef(new Animated.Value(0)).current;
   const screenOpacity = useRef(new Animated.Value(1)).current;
   const screenTranslateY = useRef(new Animated.Value(0)).current;
@@ -69,9 +74,14 @@ export default function App() {
     async function prepareApp() {
       try {
         createInitialGame();
-        const [preferences, progress] = await Promise.all([loadUserPreferences(), loadPlayerProgress()]);
+        const [preferences, progress, history] = await Promise.all([
+          loadUserPreferences(),
+          loadPlayerProgress(),
+          loadMatchHistory(),
+        ]);
         setAiLevel(preferences.aiLevel);
         setLanguageId(preferences.languageId);
+        setMatchHistory(history);
         setPlayerProgress(progress);
         await new Promise((resolve) => setTimeout(resolve, minimumLoadingTime));
       } catch (error) {
@@ -175,8 +185,13 @@ export default function App() {
   );
 
   const openSecondaryScreen = useCallback(
-    (nextScreen: 'skins' | 'stats') => {
+    (nextScreen: 'history' | 'skins' | 'stats') => {
       setSecondaryReturnScreen(screen === 'game' ? 'game' : 'home');
+      if (nextScreen === 'history') {
+        loadMatchHistory()
+          .then(setMatchHistory)
+          .catch(() => undefined);
+      }
       navigateTo(nextScreen);
     },
     [navigateTo, screen],
@@ -186,13 +201,30 @@ export default function App() {
     navigateTo(secondaryReturnScreen);
   }, [navigateTo, secondaryReturnScreen]);
 
+  const openMatchReview = useCallback(
+    (matchId: string) => {
+      setSelectedMatchReviewId(matchId);
+      navigateTo('review');
+    },
+    [navigateTo],
+  );
+
+  const closeMatchReview = useCallback(() => {
+    navigateTo('history');
+  }, [navigateTo]);
+
   useEffect(() => {
     if (screen === 'home') {
       return undefined;
     }
 
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (screen === 'skins' || screen === 'stats') {
+      if (screen === 'review') {
+        closeMatchReview();
+        return true;
+      }
+
+      if (screen === 'history' || screen === 'skins' || screen === 'stats') {
         closeSecondaryScreen();
         return true;
       }
@@ -202,7 +234,7 @@ export default function App() {
     });
 
     return () => subscription.remove();
-  }, [closeSecondaryScreen, navigateTo, screen]);
+  }, [closeMatchReview, closeSecondaryScreen, navigateTo, screen]);
 
   useEffect(() => {
     if (screen !== 'home' || showLoadingScreen) {
@@ -211,9 +243,10 @@ export default function App() {
 
     let isMounted = true;
 
-    loadPlayerProgress()
-      .then((progress) => {
+    Promise.all([loadPlayerProgress(), loadMatchHistory()])
+      .then(([progress, history]) => {
         if (isMounted) {
+          setMatchHistory(history);
           setPlayerProgress(progress);
         }
       })
@@ -223,6 +256,32 @@ export default function App() {
       isMounted = false;
     };
   }, [screen, showLoadingScreen]);
+
+  useEffect(() => {
+    if (screen !== 'history') {
+      return undefined;
+    }
+
+    let isMounted = true;
+
+    function refreshMatchHistory() {
+      loadMatchHistory()
+        .then((history) => {
+          if (isMounted) {
+            setMatchHistory(history);
+          }
+        })
+        .catch(() => undefined);
+    }
+
+    refreshMatchHistory();
+    const refreshTimers = [setTimeout(refreshMatchHistory, 350), setTimeout(refreshMatchHistory, 1200)];
+
+    return () => {
+      isMounted = false;
+      refreshTimers.forEach((timer) => clearTimeout(timer));
+    };
+  }, [screen]);
 
   if (showLoadingScreen) {
     return (
@@ -244,7 +303,11 @@ export default function App() {
 
   const shouldRenderGame =
     gameSessionId > 0 &&
-    (screen === 'game' || ((screen === 'skins' || screen === 'stats') && secondaryReturnScreen === 'game'));
+    (screen === 'game' ||
+      ((screen === 'history' || screen === 'review' || screen === 'skins' || screen === 'stats') &&
+        secondaryReturnScreen === 'game'));
+  const selectedMatchReview =
+    selectedMatchReviewId ? matchHistory.find((match) => match.id === selectedMatchReviewId) : null;
 
   return (
     <View style={styles.screen}>
@@ -261,6 +324,7 @@ export default function App() {
               <HomeScreen
                 aiLevel={aiLevel}
                 languageId={languageId}
+                onOpenHistory={() => openSecondaryScreen('history')}
                 onOpenSkins={() => openSecondaryScreen('skins')}
                 onOpenStats={() => openSecondaryScreen('stats')}
                 onStartAiGame={() => startGame(aiLevel)}
@@ -280,9 +344,11 @@ export default function App() {
                 languageId={languageId}
                 onAiLevelChange={setAiLevel}
                 onBack={() => navigateTo('home')}
+                onOpenHistory={() => openSecondaryScreen('history')}
                 onOpenSkins={() => openSecondaryScreen('skins')}
                 onOpenStats={() => openSecondaryScreen('stats')}
                 onLanguageChange={setLanguageId}
+                onMatchHistoryChange={setMatchHistory}
                 onPlayerProgressChange={setPlayerProgress}
                 playerProgress={playerProgress}
               />
@@ -304,6 +370,25 @@ export default function App() {
                 languageId={languageId}
                 onBack={closeSecondaryScreen}
                 playerProgress={playerProgress}
+              />
+            </View>
+          ) : null}
+          {screen === 'history' ? (
+            <View style={styles.routeLayer}>
+              <MatchHistoryScreen
+                languageId={languageId}
+                matchHistory={matchHistory}
+                onBack={closeSecondaryScreen}
+                onOpenMatchReview={openMatchReview}
+              />
+            </View>
+          ) : null}
+          {screen === 'review' && selectedMatchReview ? (
+            <View style={styles.routeLayer}>
+              <GameReviewScreen
+                languageId={languageId}
+                match={selectedMatchReview}
+                onBack={closeMatchReview}
               />
             </View>
           ) : null}
