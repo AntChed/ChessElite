@@ -21,6 +21,7 @@ export type MatchHistoryEntry = {
   mode: MatchHistoryMode;
   moveCount: number;
   moves: string[];
+  playerColor?: 'b' | 'w';
   reason: MatchHistoryReason;
   result: MatchHistoryResult;
   schemaVersion: number;
@@ -107,6 +108,7 @@ function normalizeMatchHistoryEntry(value: unknown): MatchHistoryEntry | null {
     mode: rawEntry.mode,
     moveCount: toNonNegativeInteger(rawEntry.moveCount, moves.length),
     moves,
+    playerColor: rawEntry.playerColor === 'b' || rawEntry.playerColor === 'w' ? rawEntry.playerColor : undefined,
     reason: isMatchReason(rawEntry.reason) ? rawEntry.reason : 'draw',
     result: rawEntry.result,
     schemaVersion: currentSchemaVersion,

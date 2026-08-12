@@ -15,7 +15,7 @@ import {
 import { createInitialGame } from './src/game/engine';
 import { BoardScreen } from './src/screens/BoardScreen';
 import { GameReviewScreen } from './src/screens/GameReviewScreen';
-import { HomeScreen } from './src/screens/HomeScreen';
+import { HomeScreen, type SoloGameConfig } from './src/screens/HomeScreen';
 import { MatchHistoryScreen } from './src/screens/MatchHistoryScreen';
 import { SkinsScreen } from './src/screens/SkinsScreen';
 import { StatsScreen } from './src/screens/StatsScreen';
@@ -27,7 +27,7 @@ import {
 } from './src/storage/playerProgress';
 import { loadMatchHistory, type MatchHistoryEntry } from './src/storage/matchHistory';
 import { loadUserPreferences } from './src/storage/userPreferences';
-import type { OpponentMode } from './src/components/ChessBoard';
+import type { ClockModeId, OpponentMode, SoloPlayerColor } from './src/components/ChessBoard';
 import type { AiLevel } from './src/game/ai';
 
 SplashScreen.preventAutoHideAsync();
@@ -35,6 +35,10 @@ SplashScreen.preventAutoHideAsync();
 const minimumLoadingTime = 1800;
 type AppScreen = 'game' | 'history' | 'home' | 'review' | 'skins' | 'stats';
 type ReturnScreen = 'game' | 'home';
+type StartGameOptions = {
+  clockModeId?: ClockModeId;
+  soloPlayerColor?: SoloPlayerColor;
+};
 
 export default function App() {
   const [isAppReady, setIsAppReady] = useState(false);
@@ -43,7 +47,9 @@ export default function App() {
   const [secondaryReturnScreen, setSecondaryReturnScreen] = useState<ReturnScreen>('home');
   const [aiLevel, setAiLevel] = useState<AiLevel>(1);
   const [gameSessionId, setGameSessionId] = useState(0);
+  const [initialClockModeId, setInitialClockModeId] = useState<ClockModeId>('none');
   const [initialOpponentMode, setInitialOpponentMode] = useState<OpponentMode>(0);
+  const [initialSoloPlayerColor, setInitialSoloPlayerColor] = useState<SoloPlayerColor>('w');
   const [isTransitionVisible, setIsTransitionVisible] = useState(false);
   const [languageId, setLanguageId] = useState<LanguageId>(defaultLanguageId);
   const [matchHistory, setMatchHistory] = useState<MatchHistoryEntry[]>([]);
@@ -176,12 +182,25 @@ export default function App() {
   );
 
   const startGame = useCallback(
-    (opponentMode: OpponentMode) => {
+    (opponentMode: OpponentMode, options: StartGameOptions = {}) => {
+      setInitialClockModeId(options.clockModeId ?? 'none');
       setInitialOpponentMode(opponentMode);
+      setInitialSoloPlayerColor(options.soloPlayerColor ?? 'w');
       setGameSessionId((currentId) => currentId + 1);
       navigateTo('game');
     },
     [navigateTo],
+  );
+
+  const startSoloGame = useCallback(
+    (config: SoloGameConfig) => {
+      setAiLevel(config.aiLevel);
+      startGame(config.aiLevel, {
+        clockModeId: config.clockModeId,
+        soloPlayerColor: config.playerColor,
+      });
+    },
+    [startGame],
   );
 
   const openSecondaryScreen = useCallback(
@@ -327,7 +346,7 @@ export default function App() {
                 onOpenHistory={() => openSecondaryScreen('history')}
                 onOpenSkins={() => openSecondaryScreen('skins')}
                 onOpenStats={() => openSecondaryScreen('stats')}
-                onStartAiGame={() => startGame(aiLevel)}
+                onStartAiGame={startSoloGame}
                 onStartLocalGame={() => startGame(0)}
                 playerProgress={playerProgress}
               />
@@ -340,7 +359,9 @@ export default function App() {
               style={[styles.routeLayer, screen === 'game' ? null : styles.inactiveRouteLayer]}
             >
               <BoardScreen
+                initialClockModeId={initialClockModeId}
                 initialOpponentMode={initialOpponentMode}
+                initialSoloPlayerColor={initialSoloPlayerColor}
                 languageId={languageId}
                 onAiLevelChange={setAiLevel}
                 onBack={() => navigateTo('home')}

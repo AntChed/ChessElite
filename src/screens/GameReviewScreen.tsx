@@ -139,6 +139,9 @@ export function GameReviewScreen({ languageId, match, onBack }: GameReviewScreen
                     piece={piece}
                     pieceSkin={pieceSkin}
                     row={row}
+                    showCoordinates={false}
+                    showFileLabel={false}
+                    showRankLabel={false}
                     size={squareSize}
                     square={square}
                     theme={boardTheme}

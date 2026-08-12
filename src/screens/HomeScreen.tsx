@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react';
 import * as Haptics from 'expo-haptics';
 import {
   ImageBackground,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -13,9 +15,21 @@ import {
 } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
-import type { AiLevel } from '../game/ai';
+import { aiLevelList, type AiLevel } from '../game/ai';
+import type { ClockModeId, SoloPlayerColor } from '../components/ChessBoard';
 import { t, type LanguageId } from '../i18n/translations';
 import { getLevelProgress, type PlayerProgress } from '../storage/playerProgress';
+
+const soloClockModeList: ClockModeId[] = ['none', '5', '10'];
+const soloColorOptions = ['w', 'b', 'random'] as const;
+
+type SoloColorOption = (typeof soloColorOptions)[number];
+
+export type SoloGameConfig = {
+  aiLevel: AiLevel;
+  clockModeId: ClockModeId;
+  playerColor: SoloPlayerColor;
+};
 
 type HomeScreenProps = {
   aiLevel: AiLevel;
@@ -23,7 +37,7 @@ type HomeScreenProps = {
   onOpenHistory: () => void;
   onOpenSkins: () => void;
   onOpenStats: () => void;
-  onStartAiGame: () => void;
+  onStartAiGame: (config: SoloGameConfig) => void;
   onStartLocalGame: () => void;
   playerProgress: PlayerProgress;
 };
@@ -78,6 +92,10 @@ export function HomeScreen({
   playerProgress,
 }: HomeScreenProps) {
   const { height, width } = useWindowDimensions();
+  const [soloConfigVisible, setSoloConfigVisible] = useState(false);
+  const [selectedSoloAiLevel, setSelectedSoloAiLevel] = useState<AiLevel>(aiLevel);
+  const [selectedSoloClockModeId, setSelectedSoloClockModeId] = useState<ClockModeId>('none');
+  const [selectedSoloColor, setSelectedSoloColor] = useState<SoloColorOption>('w');
   const isLandscape = width > height;
   const levelProgress = getLevelProgress(playerProgress.xp);
   const levelTitle = t(languageId, `home.levelTitle.${playerProgress.level}`);
@@ -90,9 +108,40 @@ export function HomeScreen({
           required: levelProgress.requiredLevelXp,
         });
 
+  useEffect(() => {
+    setSelectedSoloAiLevel(aiLevel);
+  }, [aiLevel]);
+
   function handleStartGame(startGame: () => void) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
     startGame();
+  }
+
+  function handleOpenSoloConfig() {
+    Haptics.selectionAsync().catch(() => undefined);
+    setSoloConfigVisible(true);
+  }
+
+  function handleCloseSoloConfig() {
+    Haptics.selectionAsync().catch(() => undefined);
+    setSoloConfigVisible(false);
+  }
+
+  function handleStartSoloGame() {
+    const playerColor =
+      selectedSoloColor === 'random' ? (Math.random() < 0.5 ? 'w' : 'b') : selectedSoloColor;
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
+    setSoloConfigVisible(false);
+    onStartAiGame({
+      aiLevel: selectedSoloAiLevel,
+      clockModeId: selectedSoloClockModeId,
+      playerColor,
+    });
+  }
+
+  function getSoloLevelLabel(level: AiLevel) {
+    return `${t(languageId, 'ai.level', { level })} - ${t(languageId, `ai.levelName.${level}`)}`;
   }
 
   function handleOpenSkins() {
@@ -156,7 +205,7 @@ export function HomeScreen({
             <Pressable
               accessibilityLabel={t(languageId, 'accessibility.startAi')}
               android_ripple={{ color: 'rgba(23, 17, 13, 0.16)' }}
-              onPress={() => handleStartGame(onStartAiGame)}
+              onPress={handleOpenSoloConfig}
               style={({ pressed }) => [
                 styles.primaryButton,
                 isLandscape ? styles.actionButtonLandscape : null,
@@ -227,6 +276,121 @@ export function HomeScreen({
           </View>
         </View>
       </ScrollView>
+      <Modal
+        animationType="fade"
+        onRequestClose={handleCloseSoloConfig}
+        statusBarTranslucent
+        transparent
+        visible={soloConfigVisible}
+      >
+        <View style={styles.modalBackdrop}>
+          <Pressable
+            accessibilityLabel={t(languageId, 'solo.cancel')}
+            onPress={handleCloseSoloConfig}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={[styles.soloModalCard, { maxHeight: height - 112, width: Math.min(width - 32, 460) }]}>
+            <View style={styles.modalHandle} />
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>{t(languageId, 'solo.title')}</Text>
+                <Text style={styles.modalSubtitle}>{getSoloLevelLabel(selectedSoloAiLevel)}</Text>
+              </View>
+              <Pressable
+                accessibilityLabel={t(languageId, 'solo.cancel')}
+                hitSlop={10}
+                onPress={handleCloseSoloConfig}
+                style={({ pressed }) => [styles.modalCloseButton, pressed ? styles.buttonPressed : null]}
+              >
+                <Text style={styles.modalCloseText}>{'\u00d7'}</Text>
+              </Pressable>
+            </View>
+            <ScrollView contentContainerStyle={styles.modalScrollContent} showsVerticalScrollIndicator={false}>
+              <View style={styles.modalSection}>
+                <View style={styles.modalSectionHeader}>
+                  <Text style={styles.modalSectionTitle}>{t(languageId, 'solo.aiLevel')}</Text>
+                  <Text style={styles.modalSectionSummary}>{getSoloLevelLabel(selectedSoloAiLevel)}</Text>
+                </View>
+                <View style={styles.aiLevelGrid}>
+                  {aiLevelList.map((level) => {
+                    const isActive = level === selectedSoloAiLevel;
+
+                    return (
+                      <Pressable
+                        accessibilityLabel={t(languageId, 'ai.use', { level })}
+                        key={level}
+                        onPress={() => setSelectedSoloAiLevel(level)}
+                        style={[styles.aiLevelButton, isActive ? styles.aiLevelButtonActive : null]}
+                      >
+                        <Text style={[styles.aiLevelText, isActive ? styles.aiLevelTextActive : null]}>{level}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+              <View style={styles.modalSection}>
+                <View style={styles.modalSectionHeader}>
+                  <Text style={styles.modalSectionTitle}>{t(languageId, 'solo.color')}</Text>
+                  <Text style={styles.modalSectionSummary}>{t(languageId, `solo.color.${selectedSoloColor}`)}</Text>
+                </View>
+                <View style={styles.segmentedRow}>
+                  {soloColorOptions.map((colorOption) => {
+                    const isActive = colorOption === selectedSoloColor;
+
+                    return (
+                      <Pressable
+                        key={colorOption}
+                        onPress={() => setSelectedSoloColor(colorOption)}
+                        style={[styles.segmentedButton, isActive ? styles.segmentedButtonActive : null]}
+                      >
+                        <Text style={styles.segmentedIcon}>
+                          {colorOption === 'w' ? '\u2655' : colorOption === 'b' ? '\u265B' : '?'}
+                        </Text>
+                        <Text style={[styles.segmentedText, isActive ? styles.segmentedTextActive : null]}>
+                          {t(languageId, `solo.color.${colorOption}`)}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+              <View style={styles.modalSection}>
+                <View style={styles.modalSectionHeader}>
+                  <Text style={styles.modalSectionTitle}>{t(languageId, 'solo.clock')}</Text>
+                  <Text style={styles.modalSectionSummary}>{t(languageId, `clock.${selectedSoloClockModeId}`)}</Text>
+                </View>
+                <View style={styles.segmentedRow}>
+                  {soloClockModeList.map((clockModeId) => {
+                    const isActive = clockModeId === selectedSoloClockModeId;
+
+                    return (
+                      <Pressable
+                        key={clockModeId}
+                        onPress={() => setSelectedSoloClockModeId(clockModeId)}
+                        style={[styles.segmentedButton, isActive ? styles.segmentedButtonActive : null]}
+                      >
+                        <Text style={[styles.segmentedText, isActive ? styles.segmentedTextActive : null]}>
+                          {t(languageId, `clock.${clockModeId}`)}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            </ScrollView>
+            <View style={styles.modalFooter}>
+              <Pressable
+                accessibilityLabel={t(languageId, 'solo.start')}
+                android_ripple={{ color: 'rgba(23, 17, 13, 0.14)' }}
+                onPress={handleStartSoloGame}
+                style={({ pressed }) => [styles.modalStartButton, pressed ? styles.buttonPressed : null]}
+              >
+                <Text style={styles.modalStartText}>{t(languageId, 'solo.start')}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ImageBackground>
   );
 }
@@ -247,6 +411,32 @@ const styles = StyleSheet.create({
   actionPanelLandscape: {
     backgroundColor: 'rgba(5, 5, 5, 0.38)',
     padding: 10,
+  },
+  aiLevelButton: {
+    alignItems: 'center',
+    borderColor: 'rgba(245, 239, 230, 0.16)',
+    borderRadius: 6,
+    borderWidth: 2,
+    height: 38,
+    justifyContent: 'center',
+    minWidth: 48,
+  },
+  aiLevelButtonActive: {
+    backgroundColor: 'rgba(215, 169, 80, 0.12)',
+    borderColor: '#d7a950',
+  },
+  aiLevelGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  aiLevelText: {
+    color: '#f5efe6',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  aiLevelTextActive: {
+    color: '#ffd560',
   },
   actions: {
     alignItems: 'center',
@@ -384,6 +574,105 @@ const styles = StyleSheet.create({
     marginRight: 14,
     width: 34,
   },
+  modalBackdrop: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.66)',
+    flex: 1,
+    justifyContent: 'center',
+    paddingBottom: 78,
+    paddingHorizontal: 16,
+    paddingTop: 32,
+  },
+  modalCloseButton: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(245, 239, 230, 0.08)',
+    borderColor: 'rgba(245, 239, 230, 0.18)',
+    borderRadius: 6,
+    borderWidth: 1,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  modalCloseText: {
+    color: '#f5efe6',
+    fontSize: 24,
+    fontWeight: '700',
+    lineHeight: 26,
+  },
+  modalFooter: {
+    borderTopColor: 'rgba(245, 239, 230, 0.1)',
+    borderTopWidth: 1,
+    padding: 16,
+  },
+  modalHandle: {
+    alignSelf: 'center',
+    backgroundColor: 'rgba(245, 239, 230, 0.22)',
+    borderRadius: 999,
+    height: 4,
+    marginBottom: 10,
+    marginTop: 8,
+    width: 42,
+  },
+  modalHeader: {
+    alignItems: 'center',
+    borderBottomColor: 'rgba(245, 239, 230, 0.1)',
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingBottom: 14,
+    paddingHorizontal: 16,
+  },
+  modalScrollContent: {
+    gap: 18,
+    padding: 16,
+  },
+  modalSection: {
+    gap: 10,
+  },
+  modalSectionHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'space-between',
+  },
+  modalSectionSummary: {
+    color: 'rgba(215, 169, 80, 0.82)',
+    flexShrink: 1,
+    fontSize: 11,
+    fontWeight: '800',
+    textAlign: 'right',
+  },
+  modalSectionTitle: {
+    color: '#f5efe6',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  modalStartButton: {
+    alignItems: 'center',
+    backgroundColor: '#d7a950',
+    borderRadius: 6,
+    minHeight: 46,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  modalStartText: {
+    color: '#17110d',
+    fontSize: 14,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  modalSubtitle: {
+    color: 'rgba(215, 169, 80, 0.82)',
+    fontSize: 12,
+    fontWeight: '800',
+    marginTop: 3,
+  },
+  modalTitle: {
+    color: '#f5efe6',
+    fontSize: 18,
+    fontWeight: '900',
+  },
   primaryButton: {
     alignItems: 'center',
     backgroundColor: '#d7a950',
@@ -486,6 +775,52 @@ const styles = StyleSheet.create({
     color: '#f5efe6',
     fontSize: 16,
     fontWeight: '900',
+  },
+  segmentedButton: {
+    alignItems: 'center',
+    borderColor: 'rgba(245, 239, 230, 0.16)',
+    borderRadius: 6,
+    borderWidth: 2,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 46,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  segmentedButtonActive: {
+    backgroundColor: 'rgba(215, 169, 80, 0.12)',
+    borderColor: '#d7a950',
+  },
+  segmentedIcon: {
+    color: '#d7a950',
+    fontSize: 18,
+    fontWeight: '900',
+    lineHeight: 22,
+  },
+  segmentedRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  segmentedText: {
+    color: '#f5efe6',
+    fontSize: 12,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  segmentedTextActive: {
+    color: '#ffd560',
+  },
+  soloModalCard: {
+    backgroundColor: '#1b1d20',
+    borderColor: 'rgba(215, 169, 80, 0.42)',
+    borderRadius: 8,
+    borderWidth: 1,
+    maxHeight: '82%',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { height: -12, width: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
   },
   xpText: {
     color: '#d7a950',

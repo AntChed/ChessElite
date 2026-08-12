@@ -52,6 +52,8 @@ import { files, toSquare } from '../utils/coordinates';
 
 const boardRows = Array.from({ length: 8 }, (_, row) => row);
 const boardCols = Array.from({ length: 8 }, (_, col) => col);
+const reversedBoardRows = [...boardRows].reverse();
+const reversedBoardCols = [...boardCols].reverse();
 const promotionPieces: Array<{ labelKey: string; value: PieceSymbol }> = [
   { labelKey: 'promotion.queen', value: 'q' },
   { labelKey: 'promotion.rook', value: 'r' },
@@ -68,8 +70,9 @@ type PendingPromotion = {
   to: Square;
 };
 
-type ClockModeId = (typeof clockModeList)[number]['id'];
+export type ClockModeId = (typeof clockModeList)[number]['id'];
 export type OpponentMode = 0 | AiLevel;
+export type SoloPlayerColor = Color;
 type PlayerClock = {
   b: number;
   w: number;
@@ -150,8 +153,23 @@ function getSquareCoordinates(square: Square) {
   };
 }
 
+function getDisplaySquareCoordinates(square: Square, shouldFlipBoard: boolean) {
+  const coordinates = getSquareCoordinates(square);
+
+  if (!shouldFlipBoard) {
+    return coordinates;
+  }
+
+  return {
+    col: 7 - coordinates.col,
+    row: 7 - coordinates.row,
+  };
+}
+
 type ChessBoardProps = {
+  initialClockModeId?: ClockModeId;
   initialOpponentMode?: OpponentMode;
+  initialSoloPlayerColor?: SoloPlayerColor;
   landscapeHeader?: ReactNode;
   languageId: LanguageId;
   onAiLevelChange?: (aiLevel: AiLevel) => void;
@@ -164,7 +182,9 @@ type ChessBoardProps = {
 };
 
 export function ChessBoard({
+  initialClockModeId = 'none',
   initialOpponentMode = 0,
+  initialSoloPlayerColor = 'w',
   landscapeHeader,
   languageId,
   onAiLevelChange,
@@ -189,8 +209,8 @@ export function ChessBoard({
     initialOpponentMode === 0 ? 1 : initialOpponentMode,
   );
   const [aiThinking, setAiThinking] = useState(false);
-  const [clockModeId, setClockModeId] = useState<ClockModeId>('none');
-  const [clockTimes, setClockTimes] = useState<PlayerClock>(() => createClockTimes('none'));
+  const [clockModeId, setClockModeId] = useState<ClockModeId>(initialClockModeId);
+  const [clockTimes, setClockTimes] = useState<PlayerClock>(() => createClockTimes(initialClockModeId));
   const [gameStartedAt, setGameStartedAt] = useState(() => Date.now());
   const [gameCheckCount, setGameCheckCount] = useState(0);
   const [timeExpired, setTimeExpired] = useState<'b' | 'w' | null>(null);
@@ -198,7 +218,10 @@ export function ChessBoard({
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
   const [selectedThemeId, setSelectedThemeId] = useState<BoardThemeId>(defaultBoardThemeId);
   const [selectedPieceSkinId, setSelectedPieceSkinId] = useState<PieceSkinId>(defaultPieceSkinId);
+  const [showCoordinates, setShowCoordinates] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [isBoardManuallyFlipped, setIsBoardManuallyFlipped] = useState(false);
+  const [newGameConfirmationVisible, setNewGameConfirmationVisible] = useState(false);
   const [dismissedOutcomeKey, setDismissedOutcomeKey] = useState<string | null>(null);
   const [playerProgress, setPlayerProgress] = useState<PlayerProgress>(() => createDefaultPlayerProgress());
   const [completedGameSummary, setCompletedGameSummary] = useState<CompletedGameProgressSummary | null>(null);
@@ -221,9 +244,14 @@ export function ChessBoard({
   const squareSize = boardSize / 8;
   const isAnimatingMove = animatedMove !== null;
   const isAiEnabled = opponentMode !== 0;
+  const soloPlayerColor = isAiEnabled ? initialSoloPlayerColor : 'w';
+  const defaultShouldFlipBoard = isAiEnabled && soloPlayerColor === 'b';
+  const shouldFlipBoard = defaultShouldFlipBoard !== isBoardManuallyFlipped;
+  const displayRows = shouldFlipBoard ? reversedBoardRows : boardRows;
+  const displayCols = shouldFlipBoard ? reversedBoardCols : boardCols;
   const isAiTurn =
     isAiEnabled &&
-    game.turn() === 'b' &&
+    game.turn() !== soloPlayerColor &&
     !timeExpired &&
     !game.isGameOver() &&
     !pendingPromotion &&
@@ -238,9 +266,14 @@ export function ChessBoard({
   const settingsModalWidth = Math.min(Math.max(width - 32, 280), 420);
   const selectedAiLevelLabel = t(languageId, 'ai.level', { level: selectedAiLevel });
   const selectedClockModeLabel = getClockModeLabel(clockModeId);
+  const selectedBoardOrientationLabel = t(
+    languageId,
+    shouldFlipBoard ? 'boardOrientation.blackBottom' : 'boardOrientation.whiteBottom',
+  );
   const selectedLanguageOption =
     languageOptions.find((languageOption) => languageOption.id === languageId) ?? languageOptions[0];
   const selectedSoundLabel = t(languageId, soundEnabled ? 'sound.on' : 'sound.off');
+  const selectedCoordinatesLabel = t(languageId, showCoordinates ? 'coordinates.on' : 'coordinates.off');
   const selectedChessSkinId = playerProgress.selectedSkinId;
   const winningOutcome = useMemo(() => {
     if (timeExpired) {
@@ -259,7 +292,8 @@ export function ChessBoard({
 
     return null;
   }, [game, timeExpired]);
-  const outcomeVariant = winningOutcome && isAiEnabled && winningOutcome.winner === 'b' ? 'defeat' : 'victory';
+  const outcomeVariant =
+    winningOutcome && isAiEnabled && winningOutcome.winner !== soloPlayerColor ? 'defeat' : 'victory';
   const shouldShowOutcome = Boolean(winningOutcome);
   const outcomeKey =
     shouldShowOutcome && winningOutcome
@@ -339,7 +373,7 @@ export function ChessBoard({
     }
 
     return null;
-  }, [game, gameCheckCount, isAiEnabled, selectedChessSkinId, winningOutcome]);
+  }, [game, gameCheckCount, isAiEnabled, selectedChessSkinId, soloPlayerColor, winningOutcome]);
   const completedGameKey = completedGameResult ? `${gameFen}-${timeExpired ?? 'board'}` : null;
 
   useEffect(() => {
@@ -363,9 +397,10 @@ export function ChessBoard({
       const selectedSkin = chessSkins[resolvedProgress.selectedSkinId];
 
       if (isMounted) {
-        setSelectedAiLevel(preferences.aiLevel);
+        setSelectedAiLevel(initialOpponentMode === 0 ? preferences.aiLevel : initialOpponentMode);
         setSelectedThemeId(selectedSkin.boardThemeId);
         setSelectedPieceSkinId(selectedSkin.pieceSkinId);
+        setShowCoordinates(preferences.showCoordinates);
         setSoundEnabled(preferences.soundEnabled);
         setPlayerProgress(resolvedProgress);
         setProgressLoaded(true);
@@ -387,7 +422,7 @@ export function ChessBoard({
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [initialOpponentMode]);
 
   useEffect(() => {
     if (!preferencesLoaded) {
@@ -399,9 +434,18 @@ export function ChessBoard({
       boardThemeId: selectedThemeId,
       languageId,
       pieceSkinId: selectedPieceSkinId,
+      showCoordinates,
       soundEnabled,
     }).catch(() => undefined);
-  }, [languageId, preferencesLoaded, selectedAiLevel, selectedPieceSkinId, selectedThemeId, soundEnabled]);
+  }, [
+    languageId,
+    preferencesLoaded,
+    selectedAiLevel,
+    selectedPieceSkinId,
+    selectedThemeId,
+    showCoordinates,
+    soundEnabled,
+  ]);
 
   useEffect(() => {
     if (!progressLoaded || !externalPlayerProgress) {
@@ -462,6 +506,7 @@ export function ChessBoard({
       mode: isAiEnabled ? 'soloAi' : 'twoPlayers',
       moveCount: moveHistory.length,
       moves: moveHistory,
+      playerColor: isAiEnabled ? soloPlayerColor : undefined,
       reason: getMatchHistoryReason(),
       result: completedGameResult.result,
       selectedSkinId: selectedChessSkinId,
@@ -493,6 +538,7 @@ export function ChessBoard({
     recordedOutcomeKey,
     selectedAiLevel,
     selectedChessSkinId,
+    soloPlayerColor,
     timeExpired,
     winningOutcome,
   ]);
@@ -587,7 +633,7 @@ export function ChessBoard({
       return 'draw';
     }
 
-    return winner === 'w' ? 'win' : 'loss';
+    return winner === soloPlayerColor ? 'win' : 'loss';
   }
 
   function getMatchHistoryReason(): MatchHistoryReason {
@@ -754,10 +800,11 @@ export function ChessBoard({
     setSelectedSquare(null);
   }
 
-  function handleNewGame() {
+  function resetCurrentGame() {
     setAnimatedMove(null);
     setCompletedGameSummary(null);
     setDismissedOutcomeKey(null);
+    setNewGameConfirmationVisible(false);
     setRecordedOutcomeKey(null);
     setGameStartedAt(Date.now());
     setGameFen(createInitialGame().fen());
@@ -771,12 +818,30 @@ export function ChessBoard({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
   }
 
+  function handleNewGame() {
+    const hasActiveGame = moveHistory.length > 0 && !timeExpired && !game.isGameOver();
+
+    if (hasActiveGame) {
+      setNewGameConfirmationVisible(true);
+      Haptics.selectionAsync().catch(() => undefined);
+      return;
+    }
+
+    resetCurrentGame();
+  }
+
+  function handleCancelNewGame() {
+    setNewGameConfirmationVisible(false);
+    Haptics.selectionAsync().catch(() => undefined);
+  }
+
   function handleUndoMove() {
     if (!canUndo) {
       return;
     }
 
-    const undoMoveCount = isAiEnabled && game.turn() === 'w' && gameSnapshots.length >= 2 ? 2 : 1;
+    const undoMoveCount =
+      isAiEnabled && game.turn() === soloPlayerColor && gameSnapshots.length >= 2 ? 2 : 1;
     const previousSnapshot = gameSnapshots[gameSnapshots.length - undoMoveCount];
 
     setAnimatedMove(null);
@@ -829,6 +894,16 @@ export function ChessBoard({
     Haptics.selectionAsync().catch(() => undefined);
   }
 
+  function handleShowCoordinatesChange(nextShowCoordinates: boolean) {
+    setShowCoordinates(nextShowCoordinates);
+    Haptics.selectionAsync().catch(() => undefined);
+  }
+
+  function handleFlipBoard() {
+    setIsBoardManuallyFlipped((currentValue) => !currentValue);
+    Haptics.selectionAsync().catch(() => undefined);
+  }
+
   function handleCloseOutcomeOverlay() {
     if (outcomeKey) {
       setDismissedOutcomeKey(outcomeKey);
@@ -836,7 +911,7 @@ export function ChessBoard({
   }
 
   function handleOutcomeNewGame() {
-    handleNewGame();
+    resetCurrentGame();
   }
 
   const settingsContent = (
@@ -919,6 +994,48 @@ export function ChessBoard({
       </View>
       <View style={styles.settingsSection}>
         <View style={styles.settingsSectionHeader}>
+          <Text style={styles.settingsTitle}>{t(languageId, 'settings.coordinates')}</Text>
+          <Text style={styles.settingsSummary}>{selectedCoordinatesLabel}</Text>
+        </View>
+        <View style={styles.soundModeSelector}>
+          {[true, false].map((nextShowCoordinates) => {
+            const isActive = nextShowCoordinates === showCoordinates;
+            const coordinatesLabel = t(languageId, nextShowCoordinates ? 'coordinates.on' : 'coordinates.off');
+
+            return (
+              <Pressable
+                accessibilityLabel={t(languageId, 'coordinates.use', { label: coordinatesLabel })}
+                key={String(nextShowCoordinates)}
+                onPress={() => handleShowCoordinatesChange(nextShowCoordinates)}
+                style={[styles.soundModeButton, isActive ? styles.soundModeButtonActive : null]}
+              >
+                <Text style={[styles.soundModeText, isActive ? styles.soundModeTextActive : null]}>
+                  {coordinatesLabel}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+      <View style={styles.settingsSection}>
+        <View style={styles.settingsSectionHeader}>
+          <Text style={styles.settingsTitle}>{t(languageId, 'settings.orientation')}</Text>
+          <Text style={styles.settingsSummary}>{selectedBoardOrientationLabel}</Text>
+        </View>
+        <View style={styles.soundModeSelector}>
+          <Pressable
+            accessibilityLabel={t(languageId, 'boardOrientation.flip')}
+            onPress={handleFlipBoard}
+            style={[styles.soundModeButton, styles.soundModeButtonActive]}
+          >
+            <Text style={[styles.soundModeText, styles.soundModeTextActive]}>
+              {t(languageId, 'boardOrientation.flip')}
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+      <View style={styles.settingsSection}>
+        <View style={styles.settingsSectionHeader}>
           <Text style={styles.settingsTitle}>{t(languageId, 'settings.language')}</Text>
           <Text style={styles.settingsSummary}>{selectedLanguageOption.nativeLabel}</Text>
         </View>
@@ -951,9 +1068,9 @@ export function ChessBoard({
         accessibilityLabel={t(languageId, 'accessibility.chessBoard')}
         style={[styles.board, { borderColor: boardTheme.border, height: boardSize, width: boardSize }]}
       >
-        {boardRows.map((row) => (
+        {displayRows.map((row, displayRow) => (
           <View key={row} style={styles.row}>
-            {boardCols.map((col) => {
+            {displayCols.map((col, displayCol) => {
               const square = toSquare(row, col);
               const move = getMoveTo(square);
               const piece = board[row][col];
@@ -973,6 +1090,9 @@ export function ChessBoard({
                   piece={piece}
                   pieceSkin={pieceSkin}
                   row={row}
+                  showCoordinates={showCoordinates}
+                  showFileLabel={displayRow === 7}
+                  showRankLabel={displayCol === 0}
                   size={squareSize}
                   square={square}
                   theme={boardTheme}
@@ -981,8 +1101,8 @@ export function ChessBoard({
             })}
           </View>
         ))}
-        {boardRows.map((row) =>
-          boardCols.map((col) => {
+        {displayRows.map((row, displayRow) =>
+          displayCols.map((col, displayCol) => {
             const square = toSquare(row, col);
             const piece = board[row][col];
 
@@ -998,8 +1118,8 @@ export function ChessBoard({
                   styles.pieceLayerItem,
                   {
                     height: squareSize,
-                    left: col * squareSize,
-                    top: row * squareSize,
+                    left: displayCol * squareSize,
+                    top: displayRow * squareSize,
                     width: squareSize,
                   },
                 ]}
@@ -1017,16 +1137,16 @@ export function ChessBoard({
               styles.pieceLayerItem,
               {
                 height: squareSize,
-                left: getSquareCoordinates(animatedMove.from).col * squareSize,
-                top: getSquareCoordinates(animatedMove.from).row * squareSize,
+                left: getDisplaySquareCoordinates(animatedMove.from, shouldFlipBoard).col * squareSize,
+                top: getDisplaySquareCoordinates(animatedMove.from, shouldFlipBoard).row * squareSize,
                 transform: [
                   {
                     translateX: moveAnimationProgress.interpolate({
                       inputRange: [0, 1],
                       outputRange: [
                         0,
-                        (getSquareCoordinates(animatedMove.to).col -
-                          getSquareCoordinates(animatedMove.from).col) *
+                        (getDisplaySquareCoordinates(animatedMove.to, shouldFlipBoard).col -
+                          getDisplaySquareCoordinates(animatedMove.from, shouldFlipBoard).col) *
                           squareSize,
                       ],
                     }),
@@ -1036,8 +1156,8 @@ export function ChessBoard({
                       inputRange: [0, 1],
                       outputRange: [
                         0,
-                        (getSquareCoordinates(animatedMove.to).row -
-                          getSquareCoordinates(animatedMove.from).row) *
+                        (getDisplaySquareCoordinates(animatedMove.to, shouldFlipBoard).row -
+                          getDisplaySquareCoordinates(animatedMove.from, shouldFlipBoard).row) *
                           squareSize,
                       ],
                     }),
@@ -1188,7 +1308,7 @@ export function ChessBoard({
             onPress={onCloseSettings}
             style={StyleSheet.absoluteFill}
           />
-          <View style={[styles.settingsModalCard, { width: settingsModalWidth }]}>
+          <View style={[styles.settingsModalCard, { maxHeight: height - 72, width: settingsModalWidth }]}>
             <View style={styles.settingsModalHandle} />
             <View style={styles.settingsModalHeader}>
               <View>
@@ -1212,6 +1332,49 @@ export function ChessBoard({
             >
               {settingsContent}
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        animationType="fade"
+        onRequestClose={handleCancelNewGame}
+        statusBarTranslucent
+        transparent
+        visible={newGameConfirmationVisible}
+      >
+        <View style={styles.confirmModalBackdrop}>
+          <Pressable
+            accessibilityLabel={t(languageId, 'newGame.cancel')}
+            onPress={handleCancelNewGame}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={[styles.confirmModalCard, { width: settingsModalWidth }]}>
+            <Text style={styles.confirmModalTitle}>{t(languageId, 'newGame.confirmTitle')}</Text>
+            <Text style={styles.confirmModalText}>{t(languageId, 'newGame.confirmMessage')}</Text>
+            <View style={styles.confirmModalActions}>
+              <Pressable
+                accessibilityLabel={t(languageId, 'newGame.cancel')}
+                onPress={handleCancelNewGame}
+                style={({ pressed }) => [
+                  styles.confirmModalButton,
+                  styles.confirmModalSecondaryButton,
+                  pressed ? styles.buttonPressed : null,
+                ]}
+              >
+                <Text style={styles.confirmModalSecondaryText}>{t(languageId, 'newGame.cancel')}</Text>
+              </Pressable>
+              <Pressable
+                accessibilityLabel={t(languageId, 'newGame.confirm')}
+                onPress={resetCurrentGame}
+                style={({ pressed }) => [
+                  styles.confirmModalButton,
+                  styles.confirmModalPrimaryButton,
+                  pressed ? styles.buttonPressed : null,
+                ]}
+              >
+                <Text style={styles.confirmModalPrimaryText}>{t(languageId, 'newGame.confirm')}</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </Modal>
@@ -1247,6 +1410,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 7,
     justifyContent: 'center',
+  },
+  buttonPressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.98 }],
   },
   board: {
     borderRadius: 6,
@@ -1358,6 +1525,72 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '900',
     marginTop: 3,
+  },
+  confirmModalActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 18,
+  },
+  confirmModalBackdrop: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.64)',
+    flex: 1,
+    justifyContent: 'center',
+    paddingBottom: 96,
+    paddingHorizontal: 16,
+    paddingTop: 32,
+  },
+  confirmModalButton: {
+    alignItems: 'center',
+    borderRadius: 6,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 44,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+  },
+  confirmModalCard: {
+    backgroundColor: '#1b1d20',
+    borderColor: 'rgba(215, 169, 80, 0.42)',
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: 18,
+    shadowColor: '#000',
+    shadowOffset: { height: -12, width: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+  },
+  confirmModalPrimaryButton: {
+    backgroundColor: '#d7a950',
+  },
+  confirmModalPrimaryText: {
+    color: '#17110d',
+    fontSize: 13,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  confirmModalSecondaryButton: {
+    backgroundColor: 'rgba(245, 239, 230, 0.08)',
+    borderColor: 'rgba(245, 239, 230, 0.18)',
+    borderWidth: 1,
+  },
+  confirmModalSecondaryText: {
+    color: '#f5efe6',
+    fontSize: 13,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  confirmModalText: {
+    color: 'rgba(245, 239, 230, 0.7)',
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 19,
+    marginTop: 8,
+  },
+  confirmModalTitle: {
+    color: '#f5efe6',
+    fontSize: 18,
+    fontWeight: '900',
   },
   historyCount: {
     color: 'rgba(245, 239, 230, 0.62)',
@@ -1493,16 +1726,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.64)',
     flex: 1,
-    justifyContent: 'flex-end',
-    paddingBottom: 18,
-    paddingHorizontal: 16,
+    justifyContent: 'center',
+    padding: 16,
   },
   settingsModalCard: {
     backgroundColor: '#1b1d20',
     borderColor: 'rgba(215, 169, 80, 0.42)',
     borderRadius: 8,
     borderWidth: 1,
-    maxHeight: '78%',
     overflow: 'hidden',
     paddingTop: 8,
     shadowColor: '#000',

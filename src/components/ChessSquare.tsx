@@ -4,7 +4,6 @@ import type { Piece, Square } from 'chess.js';
 import { ChessPiece } from './ChessPiece';
 import type { PieceSkin } from '../skins/pieceSkins';
 import type { BoardTheme } from '../themes/boardThemes';
-import { files } from '../utils/coordinates';
 
 type ChessSquareProps = {
   col: number;
@@ -17,6 +16,9 @@ type ChessSquareProps = {
   piece: Piece | null;
   pieceSkin: PieceSkin;
   row: number;
+  showCoordinates: boolean;
+  showFileLabel: boolean;
+  showRankLabel: boolean;
   size: number;
   square: Square;
   theme: BoardTheme;
@@ -33,6 +35,9 @@ export function ChessSquare({
   piece,
   pieceSkin,
   row,
+  showCoordinates,
+  showFileLabel,
+  showRankLabel,
   size,
   square,
   theme,
@@ -40,8 +45,8 @@ export function ChessSquare({
   const isLight = (row + col) % 2 === 0;
   const backgroundColor = isLight ? theme.lightSquare : theme.darkSquare;
   const labelColor = isLight ? theme.labelOnLight : theme.labelOnDark;
-  const rank = 8 - row;
-  const file = files[col];
+  const rank = square[1];
+  const file = square[0];
 
   return (
     <Pressable
@@ -68,10 +73,10 @@ export function ChessSquare({
       {piece && !hidePiece ? (
         <ChessPiece color={piece.color} size={size} skin={pieceSkin} type={piece.type} />
       ) : null}
-      {col === 0 ? (
+      {showCoordinates && showRankLabel ? (
         <Text style={[styles.rankLabel, { color: labelColor }]}>{rank}</Text>
       ) : null}
-      {row === 7 ? (
+      {showCoordinates && showFileLabel ? (
         <Text style={[styles.fileLabel, { color: labelColor }]}>{file}</Text>
       ) : null}
     </Pressable>

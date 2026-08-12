@@ -21,7 +21,12 @@ import {
   isDailyChallengeCompleted,
   resetDailyChallengesIfNeeded,
 } from '../challenges/dailyChallenges';
-import { ChessBoard, type OpponentMode } from '../components/ChessBoard';
+import {
+  ChessBoard,
+  type ClockModeId,
+  type OpponentMode,
+  type SoloPlayerColor,
+} from '../components/ChessBoard';
 import { t, type LanguageId } from '../i18n/translations';
 import type { AiLevel } from '../game/ai';
 import { chessSkins } from '../skins/chessSkins';
@@ -29,7 +34,9 @@ import type { MatchHistoryEntry } from '../storage/matchHistory';
 import { getLevelProgress, type PlayerProgress } from '../storage/playerProgress';
 
 type BoardScreenProps = {
+  initialClockModeId?: ClockModeId;
   initialOpponentMode?: OpponentMode;
+  initialSoloPlayerColor?: SoloPlayerColor;
   languageId: LanguageId;
   onAiLevelChange: (aiLevel: AiLevel) => void;
   onBack: () => void;
@@ -43,7 +50,9 @@ type BoardScreenProps = {
 };
 
 export function BoardScreen({
+  initialClockModeId = 'none',
   initialOpponentMode = 0,
+  initialSoloPlayerColor = 'w',
   languageId,
   onAiLevelChange,
   onBack,
@@ -208,7 +217,9 @@ export function BoardScreen({
       >
         <ChessBoard
           externalPlayerProgress={playerProgress}
+          initialClockModeId={initialClockModeId}
           initialOpponentMode={initialOpponentMode}
+          initialSoloPlayerColor={initialSoloPlayerColor}
           landscapeHeader={isLandscape ? header : null}
           languageId={languageId}
           onAiLevelChange={onAiLevelChange}

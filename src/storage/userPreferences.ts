@@ -12,6 +12,7 @@ export type UserPreferences = {
   boardThemeId: BoardThemeId;
   languageId: LanguageId;
   pieceSkinId: PieceSkinId;
+  showCoordinates: boolean;
   soundEnabled: boolean;
 };
 
@@ -20,6 +21,7 @@ export const defaultUserPreferences: UserPreferences = {
   boardThemeId: defaultBoardThemeId,
   languageId: defaultLanguageId,
   pieceSkinId: defaultPieceSkinId,
+  showCoordinates: false,
   soundEnabled: true,
 };
 
@@ -44,6 +46,10 @@ export async function loadUserPreferences(): Promise<UserPreferences> {
       pieceSkinId: isPieceSkinId(parsedValue.pieceSkinId)
         ? parsedValue.pieceSkinId
         : defaultUserPreferences.pieceSkinId,
+      showCoordinates:
+        typeof parsedValue.showCoordinates === 'boolean'
+          ? parsedValue.showCoordinates
+          : defaultUserPreferences.showCoordinates,
       soundEnabled:
         typeof parsedValue.soundEnabled === 'boolean'
           ? parsedValue.soundEnabled
