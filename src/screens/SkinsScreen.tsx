@@ -171,28 +171,32 @@ export function SkinsScreen({
                     })}
                   </View>
                   <View style={styles.previewPieces}>
-                    <Text
-                      style={[
-                        styles.previewPiece,
-                        {
-                          color: pieceSkin.lightFill,
-                          textShadowColor: pieceSkin.lightStroke,
-                        },
-                      ]}
-                    >
-                      K
-                    </Text>
-                    <Text
-                      style={[
-                        styles.previewPiece,
-                        {
-                          color: pieceSkin.darkFill,
-                          textShadowColor: pieceSkin.darkStroke,
-                        },
-                      ]}
-                    >
-                      Q
-                    </Text>
+                    <View style={[styles.previewMedallion, { borderColor: skin.accent }]}>
+                      <Text
+                        style={[
+                          styles.previewPiece,
+                          {
+                            color: pieceSkin.lightFill,
+                            textShadowColor: pieceSkin.lightStroke,
+                          },
+                        ]}
+                      >
+                        {'\u2654'}
+                      </Text>
+                    </View>
+                    <View style={[styles.previewMedallion, styles.previewMedallionDark, { borderColor: skin.accent }]}>
+                      <Text
+                        style={[
+                          styles.previewPiece,
+                          {
+                            color: pieceSkin.darkFill,
+                            textShadowColor: pieceSkin.darkStroke,
+                          },
+                        ]}
+                      >
+                        {'\u265B'}
+                      </Text>
+                    </View>
                   </View>
                 </View>
 
@@ -301,14 +305,27 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minWidth: 116,
   },
+  previewMedallion: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(245, 239, 230, 0.18)',
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
+  previewMedallionDark: {
+    backgroundColor: 'rgba(0, 0, 0, 0.34)',
+  },
   previewPiece: {
     fontFamily: Platform.select({
       android: 'serif',
       default: 'Times New Roman',
       ios: 'Times New Roman',
     }),
-    fontSize: 27,
+    fontSize: 31,
     fontWeight: '900',
+    lineHeight: 36,
     textShadowOffset: { height: 0, width: 0 },
     textShadowRadius: 5,
   },

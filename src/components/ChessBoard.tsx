@@ -49,6 +49,7 @@ import {
   recordCompletedMatch,
   type MatchHistoryEntry,
   type MatchHistoryReason,
+  type MatchHistoryResult,
 } from '../storage/matchHistory';
 import { loadUserPreferences, saveUserPreferences } from '../storage/userPreferences';
 import { files, toSquare } from '../utils/coordinates';
@@ -565,7 +566,7 @@ export function ChessBoard({
       moves: moveHistory,
       playerColor: isAiEnabled ? soloPlayerColor : undefined,
       reason: getMatchHistoryReason(),
-      result: completedGameResult.result,
+      result: getMatchHistoryResult(),
       selectedSkinId: selectedChessSkinId,
       winner: winningOutcome?.winner ?? null,
     })
@@ -707,6 +708,18 @@ export function ChessBoard({
     }
 
     return 'draw';
+  }
+
+  function getMatchHistoryResult(): MatchHistoryResult {
+    if (!winningOutcome) {
+      return 'draw';
+    }
+
+    if (!isAiEnabled) {
+      return 'win';
+    }
+
+    return completedGameResult?.result ?? 'draw';
   }
 
   function getGameStatusLabel() {

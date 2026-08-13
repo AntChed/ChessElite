@@ -28,7 +28,8 @@ Statut actuel :
 - IA noire avec 10 niveaux de difficulte, du niveau 1 simple au niveau 10 plus fort.
 - Animations de deplacement des pieces sur le plateau.
 - Themes de plateau : Classic, Dark, Neon, Gaming.
-- Skins de pieces : Classic, Pixel, Medieval, Future, Cartoon.
+- Skins de pieces : Classic, Pixel, Medieval, Future, Cartoon et palettes premium V1.6.
+- Skins premium locaux : Marble Gold, Obsidian, Tournament Green, Ivory Royal, Midnight Blue.
 - Sauvegarde des preferences avec AsyncStorage.
 - Ecran d'accueil allege avec choix solo contre IA, 2 joueurs, acces Skins et Stats.
 - Transition animee noir et or entre l'accueil et le plateau, sans rechargement visible de la home.

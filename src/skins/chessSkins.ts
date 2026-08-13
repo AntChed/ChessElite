@@ -9,7 +9,12 @@ export type ChessSkinId =
   | 'royalGold'
   | 'ice'
   | 'fire'
-  | 'cyber';
+  | 'cyber'
+  | 'marbleGold'
+  | 'obsidian'
+  | 'tournamentGreen'
+  | 'ivoryRoyal'
+  | 'midnightBlue';
 
 export type ChessSkinUnlockCondition =
   | { type: 'free' }
@@ -103,6 +108,51 @@ export const chessSkins: Record<ChessSkinId, ChessSkin> = {
     nameKey: 'skin.cyber.name',
     pieceSkinId: 'pixel',
     unlockCondition: { type: 'distinctDays', value: 3 },
+  },
+  marbleGold: {
+    accent: '#f4c96f',
+    boardThemeId: 'classic',
+    descriptionKey: 'skin.marbleGold.description',
+    id: 'marbleGold',
+    nameKey: 'skin.marbleGold.name',
+    pieceSkinId: 'marbleGold',
+    unlockCondition: { type: 'gamesPlayed', value: 20 },
+  },
+  obsidian: {
+    accent: '#d7a950',
+    boardThemeId: 'dark',
+    descriptionKey: 'skin.obsidian.description',
+    id: 'obsidian',
+    nameKey: 'skin.obsidian.name',
+    pieceSkinId: 'obsidian',
+    unlockCondition: { type: 'wins', value: 10 },
+  },
+  tournamentGreen: {
+    accent: '#f2bf63',
+    boardThemeId: 'gaming',
+    descriptionKey: 'skin.tournamentGreen.description',
+    id: 'tournamentGreen',
+    nameKey: 'skin.tournamentGreen.name',
+    pieceSkinId: 'tournamentGreen',
+    unlockCondition: { type: 'distinctDays', value: 5 },
+  },
+  ivoryRoyal: {
+    accent: '#d7a950',
+    boardThemeId: 'classic',
+    descriptionKey: 'skin.ivoryRoyal.description',
+    id: 'ivoryRoyal',
+    nameKey: 'skin.ivoryRoyal.name',
+    pieceSkinId: 'ivoryRoyal',
+    unlockCondition: { type: 'level', value: 4 },
+  },
+  midnightBlue: {
+    accent: '#8bd3ff',
+    boardThemeId: 'dark',
+    descriptionKey: 'skin.midnightBlue.description',
+    id: 'midnightBlue',
+    nameKey: 'skin.midnightBlue.name',
+    pieceSkinId: 'midnightBlue',
+    unlockCondition: { type: 'checkmates', value: 3 },
   },
 };
 

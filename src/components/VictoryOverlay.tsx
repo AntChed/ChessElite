@@ -356,7 +356,7 @@ export function VictoryOverlay({
                   {progressSummary.statItems.map((item) => (
                     <View key={item.label} style={styles.matchStat}>
                       <Text style={[styles.matchStatValue, { color: palette.winner }]}>{item.value}</Text>
-                      <Text numberOfLines={1} style={styles.matchStatLabel}>
+                      <Text numberOfLines={2} style={styles.matchStatLabel}>
                         {item.label}
                       </Text>
                     </View>
@@ -485,7 +485,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     borderWidth: 1,
     flex: 1,
-    minHeight: 58,
+    minHeight: 66,
     paddingHorizontal: 6,
     paddingVertical: 8,
   },
@@ -493,6 +493,7 @@ const styles = StyleSheet.create({
     color: 'rgba(245, 239, 230, 0.58)',
     fontSize: 9,
     fontWeight: '900',
+    lineHeight: 11,
     marginTop: 4,
     textAlign: 'center',
     textTransform: 'uppercase',

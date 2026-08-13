@@ -1,4 +1,16 @@
-export type PieceSkinId = 'classic' | 'pixel' | 'medieval' | 'futuristic' | 'cartoon';
+export type PieceSkinTextureVariant = 'classic' | 'pixel' | 'medieval' | 'futuristic' | 'cartoon';
+
+export type PieceSkinId =
+  | 'classic'
+  | 'pixel'
+  | 'medieval'
+  | 'futuristic'
+  | 'cartoon'
+  | 'marbleGold'
+  | 'obsidian'
+  | 'tournamentGreen'
+  | 'ivoryRoyal'
+  | 'midnightBlue';
 
 export type PieceSkin = {
   accent: string;
@@ -12,7 +24,7 @@ export type PieceSkin = {
   lightStroke: string;
   shadow: string;
   strokeWidth: number;
-  variant: PieceSkinId;
+  variant: PieceSkinTextureVariant;
 };
 
 export const pieceSkins: Record<PieceSkinId, PieceSkin> = {
@@ -85,6 +97,76 @@ export const pieceSkins: Record<PieceSkinId, PieceSkin> = {
     shadow: '#5f3256',
     strokeWidth: 3.4,
     variant: 'cartoon',
+  },
+  marbleGold: {
+    accent: '#f4c96f',
+    darkFill: '#19140e',
+    darkStroke: '#e0b864',
+    fontFamily: 'serif',
+    fontWeight: '900',
+    id: 'marbleGold',
+    label: 'Marble Gold',
+    lightFill: '#fff8ea',
+    lightStroke: '#a77b2d',
+    shadow: '#080604',
+    strokeWidth: 2.6,
+    variant: 'medieval',
+  },
+  obsidian: {
+    accent: '#d7a950',
+    darkFill: '#050505',
+    darkStroke: '#d7a950',
+    fontFamily: 'serif',
+    fontWeight: '900',
+    id: 'obsidian',
+    label: 'Obsidian',
+    lightFill: '#e7e0d3',
+    lightStroke: '#1c1712',
+    shadow: '#000000',
+    strokeWidth: 2.8,
+    variant: 'classic',
+  },
+  tournamentGreen: {
+    accent: '#f2bf63',
+    darkFill: '#10251c',
+    darkStroke: '#d7a950',
+    fontFamily: 'serif',
+    fontWeight: '900',
+    id: 'tournamentGreen',
+    label: 'Tournament Green',
+    lightFill: '#f7f0d9',
+    lightStroke: '#244431',
+    shadow: '#06120d',
+    strokeWidth: 2.6,
+    variant: 'medieval',
+  },
+  ivoryRoyal: {
+    accent: '#d7a950',
+    darkFill: '#22170f',
+    darkStroke: '#f0c66d',
+    fontFamily: 'serif',
+    fontWeight: '900',
+    id: 'ivoryRoyal',
+    label: 'Ivory Royal',
+    lightFill: '#fffdf3',
+    lightStroke: '#7e5a22',
+    shadow: '#110b07',
+    strokeWidth: 2.4,
+    variant: 'classic',
+  },
+  midnightBlue: {
+    accent: '#8bd3ff',
+    darkFill: '#080d1c',
+    darkStroke: '#8bd3ff',
+    fontFamily: 'sans-serif-condensed',
+    fontWeight: '900',
+    id: 'midnightBlue',
+    label: 'Midnight Blue',
+    lightFill: '#eef7ff',
+    lightStroke: '#274a78',
+    shadow: '#02040b',
+    strokeWidth: 2.8,
+    variant: 'futuristic',
   },
 };
 
