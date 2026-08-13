@@ -9,8 +9,10 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import Svg, { Circle, Path } from 'react-native-svg';
 
 import { t, type LanguageId } from '../i18n/translations';
+import { badgeList, getBadgeProgress, getNextBadge, type BadgeId } from '../progress/badges';
 import { chessSkinList, type ChessSkin } from '../skins/chessSkins';
 import { isChessSkinUnlocked } from '../skins/skinUnlocks';
 import { getLevelProgress, type PlayerProgress } from '../storage/playerProgress';
@@ -26,6 +28,85 @@ type StatItem = {
   label: string;
   value: string;
 };
+
+const badgeVisuals: Record<BadgeId, { accent: string; fill: string; piece: string }> = {
+  dailyPlayer: {
+    accent: '#8bd3ff',
+    fill: '#17324a',
+    piece: '\u2659',
+  },
+  fastWin: {
+    accent: '#f2bf63',
+    fill: '#3c2b12',
+    piece: '\u2658',
+  },
+  firstCheckmate: {
+    accent: '#d7a950',
+    fill: '#332511',
+    piece: '\u265A',
+  },
+  noUndoVictory: {
+    accent: '#76d39b',
+    fill: '#163522',
+    piece: '\u2656',
+  },
+  skinCollector: {
+    accent: '#d7a2ff',
+    fill: '#301b43',
+    piece: '\u2655',
+  },
+  threeWinStreak: {
+    accent: '#ff8f7d',
+    fill: '#3d1d1b',
+    piece: '\u2657',
+  },
+};
+
+type BadgeEmblemProps = {
+  badgeId: BadgeId;
+  isUnlocked: boolean;
+};
+
+function BadgeEmblem({ badgeId, isUnlocked }: BadgeEmblemProps) {
+  const visual = badgeVisuals[badgeId];
+  const accent = isUnlocked ? visual.accent : 'rgba(245, 239, 230, 0.34)';
+  const fill = isUnlocked ? visual.fill : '#24272d';
+  const innerFill = isUnlocked ? 'rgba(215, 169, 80, 0.15)' : 'rgba(245, 239, 230, 0.06)';
+
+  return (
+    <View style={styles.badgeEmblem}>
+      <Svg height={98} viewBox="0 0 82 100" width={82}>
+        <Path
+          d="M41 4C56 4 70 15 72 30C76 56 57 78 41 94C25 78 6 56 10 30C12 15 26 4 41 4Z"
+          fill={fill}
+          stroke={accent}
+          strokeWidth={3}
+        />
+        <Path
+          d="M41 13C52 13 62 21 64 32C67 51 54 68 41 81C28 68 15 51 18 32C20 21 30 13 41 13Z"
+          fill={innerFill}
+          stroke={isUnlocked ? 'rgba(255, 245, 214, 0.34)' : 'rgba(245, 239, 230, 0.1)'}
+          strokeWidth={1.5}
+        />
+        <Circle
+          cx={41}
+          cy={40}
+          fill={isUnlocked ? 'rgba(255, 245, 214, 0.08)' : 'rgba(245, 239, 230, 0.04)'}
+          r={21}
+          stroke={accent}
+          strokeWidth={1.5}
+        />
+        <Path
+          d="M24 72H58"
+          stroke={accent}
+          strokeLinecap="round"
+          strokeWidth={2.6}
+        />
+      </Svg>
+      <Text style={[styles.badgePiece, { color: accent }]}>{visual.piece}</Text>
+    </View>
+  );
+}
 
 export function StatsScreen({
   languageId,
@@ -44,6 +125,13 @@ export function StatsScreen({
   const currentSkin = chessSkinList.find((skin) => skin.id === playerProgress.selectedSkinId) ?? chessSkinList[0];
   const nextSkin = getNextLockedSkin(playerProgress);
   const nextSkinProgress = nextSkin ? getSkinProgress(nextSkin, playerProgress) : null;
+  const nextBadge = getNextBadge(playerProgress);
+  const nextBadgeProgress = nextBadge?.progress ?? null;
+  const nextObjectiveProgress = nextBadgeProgress ?? nextSkinProgress;
+  const nextObjectiveProgressWidth = nextObjectiveProgress
+    ? (`${Math.round(nextObjectiveProgress.ratio * 100)}%` as const)
+    : '100%';
+  const unlockedBadgeCount = playerProgress.unlockedBadgeIds.length;
   const levelProgressLabel =
     playerProgress.level === 5
       ? t(languageId, 'home.progressMax')
@@ -137,6 +225,74 @@ export function StatsScreen({
           <Text style={styles.xpText}>{levelProgressLabel}</Text>
           <View style={styles.progressTrack}>
             <View style={[styles.progressFill, { width: levelProgressWidth }]} />
+          </View>
+        </View>
+
+        <View style={styles.nextPanel}>
+          <Text style={styles.nextTitle}>{t(languageId, 'stats.nextObjective')}</Text>
+          <Text style={styles.nextName}>
+            {nextBadge
+              ? t(languageId, nextBadge.badge.titleKey)
+              : nextSkin
+                ? t(languageId, nextSkin.nameKey)
+                : t(languageId, 'stats.allObjectivesCompleted')}
+          </Text>
+          <Text style={styles.nextDescription}>
+            {nextBadge && nextBadgeProgress
+              ? t(languageId, nextBadge.badge.descriptionKey)
+              : nextSkin && nextSkinProgress
+                ? t(languageId, `skins.unlock.${nextSkin.unlockCondition.type}`, {
+                    current: Math.min(nextSkinProgress.current, nextSkinProgress.required),
+                    required: nextSkinProgress.required,
+                  })
+                : t(languageId, 'stats.allObjectivesCompletedDescription')}
+          </Text>
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: nextObjectiveProgressWidth }]} />
+          </View>
+        </View>
+
+        <View style={styles.badgesPanel}>
+          <View style={styles.badgesHeader}>
+            <Text style={styles.nextTitle}>{t(languageId, 'stats.badges')}</Text>
+            <Text style={styles.badgesMeta}>
+              {t(languageId, 'stats.badgesUnlocked', {
+                count: unlockedBadgeCount,
+                total: badgeList.length,
+              })}
+            </Text>
+          </View>
+          <View style={styles.badgesGrid}>
+            {badgeList.map((badge) => {
+              const isUnlocked = playerProgress.unlockedBadgeIds.includes(badge.id);
+              const badgeProgress = getBadgeProgress(badge, playerProgress);
+              const badgeProgressWidth = `${Math.round(badgeProgress.ratio * 100)}%` as const;
+
+              return (
+                <View key={badge.id} style={[styles.badgeCard, isUnlocked ? styles.badgeCardUnlocked : null]}>
+                  <BadgeEmblem badgeId={badge.id} isUnlocked={isUnlocked} />
+                  <Text style={styles.badgeTitle}>{t(languageId, badge.titleKey)}</Text>
+                  <Text style={styles.badgeDescription}>{t(languageId, badge.descriptionKey)}</Text>
+                  <View style={styles.badgeProgressTrack}>
+                    <View
+                      style={[
+                        styles.badgeProgressFill,
+                        {
+                          backgroundColor: badgeVisuals[badge.id].accent,
+                          opacity: isUnlocked ? 1 : 0.72,
+                          width: badgeProgressWidth,
+                        },
+                      ]}
+                    />
+                  </View>
+                  <Text style={styles.badgeStatus}>
+                    {isUnlocked
+                      ? t(languageId, 'badge.unlocked')
+                      : `${Math.min(badgeProgress.current, badgeProgress.required)} / ${badgeProgress.required}`}
+                  </Text>
+                </View>
+              );
+            })}
           </View>
         </View>
 
@@ -248,6 +404,103 @@ const styles = StyleSheet.create({
     fontSize: 38,
     fontWeight: '400',
     lineHeight: 40,
+  },
+  badgeCard: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(245, 239, 230, 0.035)',
+    borderColor: 'rgba(245, 239, 230, 0.08)',
+    borderRadius: 22,
+    borderWidth: 1,
+    flexBasis: '47%',
+    flexGrow: 1,
+    minHeight: 236,
+    overflow: 'hidden',
+    padding: 14,
+  },
+  badgeCardUnlocked: {
+    backgroundColor: 'rgba(215, 169, 80, 0.075)',
+    borderColor: 'rgba(215, 169, 80, 0.34)',
+  },
+  badgeDescription: {
+    color: 'rgba(245, 239, 230, 0.62)',
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 16,
+    marginTop: 6,
+    minHeight: 48,
+    textAlign: 'center',
+  },
+  badgeEmblem: {
+    alignItems: 'center',
+    height: 104,
+    justifyContent: 'center',
+    width: 88,
+  },
+  badgePiece: {
+    fontFamily: Platform.select({
+      android: 'serif',
+      default: 'Times New Roman',
+      ios: 'Times New Roman',
+    }),
+    fontSize: 34,
+    fontWeight: '900',
+    lineHeight: 40,
+    position: 'absolute',
+    textAlign: 'center',
+    top: 30,
+  },
+  badgeProgressFill: {
+    backgroundColor: '#d7a950',
+    borderRadius: 999,
+    height: '100%',
+  },
+  badgeProgressTrack: {
+    backgroundColor: 'rgba(245, 239, 230, 0.14)',
+    borderRadius: 999,
+    height: 6,
+    marginTop: 10,
+    overflow: 'hidden',
+    width: '100%',
+  },
+  badgeStatus: {
+    color: '#d7a950',
+    fontSize: 11,
+    fontWeight: '900',
+    marginTop: 8,
+    textAlign: 'center',
+    textTransform: 'uppercase',
+  },
+  badgeTitle: {
+    color: '#f5efe6',
+    fontSize: 14,
+    fontWeight: '900',
+    marginTop: 8,
+    minHeight: 34,
+    textAlign: 'center',
+  },
+  badgesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  badgesHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  badgesMeta: {
+    color: 'rgba(245, 239, 230, 0.62)',
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  badgesPanel: {
+    backgroundColor: '#171a1e',
+    borderColor: 'rgba(245, 239, 230, 0.12)',
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 12,
+    padding: 16,
   },
   content: {
     gap: 16,

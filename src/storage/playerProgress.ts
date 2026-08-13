@@ -12,9 +12,10 @@ import {
   getLocalDateKey,
   resetDailyChallengesIfNeeded,
 } from '../challenges/dailyChallenges';
+import { applyBadgeUnlocks, type BadgeId } from '../progress/badges';
 
 const playerProgressStorageKey = '@chess-elite/player-progress';
-const currentSchemaVersion = 1;
+const currentSchemaVersion = 2;
 const levelXpThresholds = [0, 100, 250, 500, 900] as const;
 
 export type PlayerLevel = 1 | 2 | 3 | 4 | 5;
@@ -34,20 +35,27 @@ export type PlayerProgress = {
   schemaVersion: number;
   selectedSkinId: ChessSkinId;
   unlockedSkinIds: ChessSkinId[];
+  unlockedBadgeIds: BadgeId[];
   wins: number;
   xp: number;
 };
 
 export type CompletedGameResult = {
+  aiLevel?: number;
+  capturedQueen?: boolean;
   checkmate: boolean;
   checks: number;
   completedDate?: string;
+  moveCount?: number;
+  promoted?: boolean;
   result: 'draw' | 'loss' | 'win';
   selectedSkinId: ChessSkinId;
+  usedUndo?: boolean;
 };
 
 export type CompletedGameProgressSummary = {
   newlyCompletedDailyChallengeIds: string[];
+  newlyUnlockedBadgeIds: BadgeId[];
   newlyUnlockedSkinIds: ChessSkinId[];
   nextProgress: PlayerProgress;
   previousProgress: PlayerProgress;
@@ -69,6 +77,7 @@ export function createDefaultPlayerProgress(): PlayerProgress {
     losses: 0,
     schemaVersion: currentSchemaVersion,
     selectedSkinId: defaultChessSkinId,
+    unlockedBadgeIds: [],
     unlockedSkinIds: freeChessSkinIds,
     wins: 0,
     xp: 0,
@@ -157,9 +166,20 @@ export function applyCompletedGameResult(
     completedDate,
   );
 
-  return applySkinUnlocks({
+  const progressWithSkins = applySkinUnlocks({
     ...nextProgress,
     level: getLevelFromXp(nextProgress.xp),
+  });
+  const progressWithBadges = applyBadgeUnlocks(progressWithSkins, result);
+  const progressWithBadgeLevelSkins = applySkinUnlocks({
+    ...progressWithBadges,
+    level: getLevelFromXp(progressWithBadges.xp),
+  });
+  const finalProgress = applyBadgeUnlocks(progressWithBadgeLevelSkins, result);
+
+  return applySkinUnlocks({
+    ...finalProgress,
+    level: getLevelFromXp(finalProgress.xp),
   });
 }
 
@@ -175,7 +195,11 @@ export async function loadPlayerProgress(): Promise<PlayerProgress> {
   }
 
   try {
-    return normalizePlayerProgress(JSON.parse(storedValue));
+    const normalizedProgress = normalizePlayerProgress(JSON.parse(storedValue));
+
+    savePlayerProgress(normalizedProgress).catch(() => undefined);
+
+    return normalizedProgress;
   } catch {
     return createDefaultPlayerProgress();
   }
@@ -203,6 +227,9 @@ export async function recordCompletedGameWithSummary(
     newlyCompletedDailyChallengeIds: nextProgress.completedDailyChallengeIds.filter(
       (challengeId) => !currentProgress.completedDailyChallengeIds.includes(challengeId),
     ),
+    newlyUnlockedBadgeIds: nextProgress.unlockedBadgeIds.filter(
+      (badgeId) => !currentProgress.unlockedBadgeIds.includes(badgeId),
+    ),
     newlyUnlockedSkinIds: getNewlyUnlockedChessSkinIds(currentProgress, nextProgress),
     nextProgress,
     previousProgress: currentProgress,
@@ -223,8 +250,7 @@ function normalizePlayerProgress(value: unknown): PlayerProgress {
     ? rawProgress.selectedSkinId
     : fallback.selectedSkinId;
 
-  return applySkinUnlocks(
-    resetDailyChallengesIfNeeded({
+  const normalizedProgress = resetDailyChallengesIfNeeded({
       bestWinStreak: toNonNegativeInteger(rawProgress.bestWinStreak, fallback.bestWinStreak),
       checkmates: toNonNegativeInteger(rawProgress.checkmates, fallback.checkmates),
       checks: toNonNegativeInteger(rawProgress.checks, fallback.checks),
@@ -247,11 +273,18 @@ function normalizePlayerProgress(value: unknown): PlayerProgress {
       losses: toNonNegativeInteger(rawProgress.losses, fallback.losses),
       schemaVersion: currentSchemaVersion,
       selectedSkinId,
+      unlockedBadgeIds: toBadgeIdArray(rawProgress.unlockedBadgeIds, fallback.unlockedBadgeIds),
       unlockedSkinIds: normalizeUnlockedSkinIds(rawProgress.unlockedSkinIds),
       wins: toNonNegativeInteger(rawProgress.wins, fallback.wins),
       xp,
-    }),
-  );
+  });
+  const progressWithSkins = applySkinUnlocks(normalizedProgress);
+  const progressWithBadges = applyBadgeUnlocks(progressWithSkins);
+
+  return {
+    ...progressWithBadges,
+    level: getLevelFromXp(progressWithBadges.xp),
+  };
 }
 
 function normalizeUnlockedSkinIds(value: unknown) {
@@ -282,6 +315,21 @@ function toStringArray(value: unknown, fallback: string[]) {
 
 function toChessSkinIdArray(value: unknown, fallback: ChessSkinId[]) {
   return Array.isArray(value) && value.every(isChessSkinId) ? value : fallback;
+}
+
+function toBadgeIdArray(value: unknown, fallback: BadgeId[]) {
+  const badgeIds: BadgeId[] = [
+    'dailyPlayer',
+    'fastWin',
+    'firstCheckmate',
+    'noUndoVictory',
+    'skinCollector',
+    'threeWinStreak',
+  ];
+
+  return Array.isArray(value) && value.every((item) => badgeIds.includes(item as BadgeId))
+    ? Array.from(new Set(value as BadgeId[]))
+    : fallback;
 }
 
 function toDateKeyArray(value: unknown, fallback: string[]) {

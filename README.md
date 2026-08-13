@@ -62,6 +62,7 @@ chess
     |-- App.tsx
     |-- app.json
     |-- package.json
+    |-- version.json
     |-- assets
     |   |-- icon.png
     |   |-- android-icon-foreground.png
@@ -74,19 +75,26 @@ chess
     |   |   `-- capture.wav
     |   `-- splash
     |       `-- chess-elite-splash.png
+    |-- scripts
+    |   `-- version.js
     `-- src
         |-- components
         |   |-- ChessBoard.tsx
         |   |-- ChessPiece.tsx
         |   `-- ChessSquare.tsx
+        |-- config
+        |   `-- appVersion.ts
         |-- game
         |   |-- ai.ts
         |   `-- engine.ts
         |-- i18n
         |   `-- translations.ts
+        |-- progress
+        |   `-- badges.ts
         |-- screens
         |   |-- HomeScreen.tsx
         |   |-- BoardScreen.tsx
+        |   |-- GamesScreen.tsx
         |   |-- SkinsScreen.tsx
         |   `-- StatsScreen.tsx
         |-- skins
@@ -144,15 +152,15 @@ ChessElite/android/app/build/outputs/apk/release/app-release.apk
 Pour regenerer un APK :
 
 ```powershell
-cd ChessElite/android
-.\gradlew.bat app:assembleRelease -x lint -x test --console=plain
+cd ChessElite
+npm run android:apk
 ```
 
 Bundle Play Store signe :
 
 ```powershell
-cd ChessElite/android
-.\gradlew.bat app:bundleRelease -x lint -x test --console=plain
+cd ChessElite
+npm run android:aab
 ```
 
 Fichier `.aab` a envoyer dans la Play Console :
@@ -185,13 +193,37 @@ Tres important : faire une sauvegarde privee de ces deux fichiers. Ils permetten
 
 La configuration Gradle lit automatiquement `signing.properties` si le fichier existe. Si le fichier est absent, Gradle retombe sur la cle debug pour les builds locaux, mais ce n'est pas utilisable pour publier.
 
-Avant chaque nouvelle publication Play Store, incrementer `versionCode` dans :
+## Version Android
+
+La version de l'application est centralisee dans :
 
 ```txt
-ChessElite/android/app/build.gradle
+ChessElite/version.json
 ```
 
-La version lisible utilisateur est `versionName`, actuellement `1.0.0`.
+Ce fichier contient :
+
+- `versionName` : version visible par l'utilisateur, par exemple `1.0.5`.
+- `versionCode` : numero interne Android / Play Store, toujours croissant.
+
+Gradle lit automatiquement ces valeurs pour les builds APK et AAB. Il ne faut donc plus modifier `versionCode` ou `versionName` directement dans `android/app/build.gradle`.
+
+L'application lit aussi ce fichier pour afficher la version discretement dans la modale `Settings`.
+
+Avant une nouvelle publication, incrementer la version depuis `ChessElite` :
+
+```powershell
+npm run version:patch
+```
+
+Autres increments disponibles :
+
+```powershell
+npm run version:minor
+npm run version:major
+```
+
+Le script met a jour `version.json`, `package.json`, `package-lock.json` et `app.json`.
 
 ## Publication Play Store
 
@@ -644,7 +676,7 @@ Validation en cours :
 
 - `npx tsc --noEmit` : OK.
 - `npx expo install --check` : OK apres mise a jour de `expo` vers `~56.0.19`, `expo-audio` vers `~56.0.13` et `expo-splash-screen` vers `~56.0.14`.
-- `.\gradlew.bat app:assembleRelease -x lint -x test --console=plain` : OK, APK release genere.
+- `npm run android:apk` : OK, APK release genere.
 - Apres wipe data et relance de l'emulateur : `adb install -r android\app\build\outputs\apk\release\app-release.apk` OK.
 - Accueil portrait : OK, progression V1.1 et boutons principaux visibles.
 - Accueil paysage : OK apres correction, boutons `2 joueurs` et `Solo vs IA` alignes en bas sur une meme ligne.

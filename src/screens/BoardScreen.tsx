@@ -29,6 +29,7 @@ import {
 } from '../components/ChessBoard';
 import { t, type LanguageId } from '../i18n/translations';
 import type { AiLevel } from '../game/ai';
+import { getBadgeProgress, getNextBadge } from '../progress/badges';
 import { chessSkins } from '../skins/chessSkins';
 import type { MatchHistoryEntry } from '../storage/matchHistory';
 import { getLevelProgress, type PlayerProgress } from '../storage/playerProgress';
@@ -37,6 +38,7 @@ type BoardScreenProps = {
   initialClockModeId?: ClockModeId;
   initialOpponentMode?: OpponentMode;
   initialSoloPlayerColor?: SoloPlayerColor;
+  isActive?: boolean;
   languageId: LanguageId;
   onAiLevelChange: (aiLevel: AiLevel) => void;
   onBack: () => void;
@@ -53,6 +55,7 @@ export function BoardScreen({
   initialClockModeId = 'none',
   initialOpponentMode = 0,
   initialSoloPlayerColor = 'w',
+  isActive = true,
   languageId,
   onAiLevelChange,
   onBack,
@@ -67,6 +70,7 @@ export function BoardScreen({
   const { height, width } = useWindowDimensions();
   const [progressExpanded, setProgressExpanded] = useState(false);
   const [settingsExpanded, setSettingsExpanded] = useState(false);
+  const isBoardActive = isActive && !progressExpanded && !settingsExpanded;
   const isLandscape = width > height;
   const dailyChallenges = getDailyChallenges();
   const dailyChallengeProgress = resetDailyChallengesIfNeeded(playerProgress);
@@ -74,6 +78,11 @@ export function BoardScreen({
     isDailyChallengeCompleted(challenge, dailyChallengeProgress),
   ).length;
   const currentSkin = chessSkins[playerProgress.selectedSkinId] ?? chessSkins.classic;
+  const nextBadge = getNextBadge(playerProgress);
+  const nextBadgeProgress = nextBadge ? getBadgeProgress(nextBadge.badge, playerProgress) : null;
+  const nextBadgeProgressPercent = nextBadgeProgress
+    ? (`${Math.round(nextBadgeProgress.ratio * 100)}%` as DimensionValue)
+    : '100%';
   const levelProgress = getLevelProgress(playerProgress.xp);
   const progressPercent = `${Math.round(levelProgress.ratio * 100)}%` as DimensionValue;
   const levelTitle = t(languageId, `home.levelTitle.${playerProgress.level}`);
@@ -220,6 +229,7 @@ export function BoardScreen({
           initialClockModeId={initialClockModeId}
           initialOpponentMode={initialOpponentMode}
           initialSoloPlayerColor={initialSoloPlayerColor}
+          isBoardActive={isBoardActive}
           landscapeHeader={isLandscape ? header : null}
           languageId={languageId}
           onAiLevelChange={onAiLevelChange}
@@ -300,6 +310,21 @@ export function BoardScreen({
                 <View style={styles.progressSummaryTile}>
                   <Text style={styles.progressSummaryLabel}>{t(languageId, 'stats.currentStreak')}</Text>
                   <Text style={styles.progressSummaryValue}>{playerProgress.currentWinStreak}</Text>
+                </View>
+              </View>
+
+              <View style={styles.progressObjectivePanel}>
+                <Text style={styles.challengeTitle}>{t(languageId, 'stats.nextObjective')}</Text>
+                <Text style={styles.progressObjectiveName}>
+                  {nextBadge ? t(languageId, nextBadge.badge.titleKey) : t(languageId, 'stats.allObjectivesCompleted')}
+                </Text>
+                <Text style={styles.progressObjectiveDescription}>
+                  {nextBadge
+                    ? t(languageId, nextBadge.badge.descriptionKey)
+                    : t(languageId, 'stats.allObjectivesCompletedDescription')}
+                </Text>
+                <View style={styles.challengeTrack}>
+                  <View style={[styles.challengeFill, { width: nextBadgeProgressPercent }]} />
                 </View>
               </View>
 
@@ -560,6 +585,26 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     paddingRight: 12,
+  },
+  progressObjectiveDescription: {
+    color: 'rgba(245, 239, 230, 0.66)',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+    marginTop: 6,
+  },
+  progressObjectiveName: {
+    color: '#f5efe6',
+    fontSize: 16,
+    fontWeight: '900',
+    marginTop: 8,
+  },
+  progressObjectivePanel: {
+    backgroundColor: 'rgba(215, 169, 80, 0.08)',
+    borderColor: 'rgba(215, 169, 80, 0.3)',
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: 12,
   },
   progressSummaryGrid: {
     flexDirection: 'row',

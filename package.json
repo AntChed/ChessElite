@@ -1,6 +1,6 @@
 {
   "name": "chess-elite",
-  "version": "1.0.0",
+  "version": "1.0.5",
   "main": "index.ts",
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -22,7 +22,12 @@
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
+    "android:aab": "cd android && .\\gradlew.bat app:bundleRelease -x lint -x test --console=plain",
+    "android:apk": "cd android && .\\gradlew.bat app:assembleRelease -x lint -x test --console=plain",
     "ios": "expo run:ios",
+    "version:major": "node scripts/version.js major",
+    "version:minor": "node scripts/version.js minor",
+    "version:patch": "node scripts/version.js patch",
     "web": "expo start --web"
   },
   "expo": {

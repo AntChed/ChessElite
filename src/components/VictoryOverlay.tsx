@@ -22,6 +22,8 @@ type OverlayProgressSummary = {
     value: string;
   }>;
   title: string;
+  unlockedBadgeLabels: string[];
+  unlockedBadgesTitle: string;
   unlockedSkinLabels: string[];
   unlockedSkinsTitle: string;
   xpGainedLabel: string;
@@ -388,8 +390,19 @@ export function VictoryOverlay({
                     ))}
                   </View>
                 ) : null}
+                {progressSummary.unlockedBadgeLabels.length > 0 ? (
+                  <View style={styles.rewardList}>
+                    <Text style={styles.rewardListTitle}>{progressSummary.unlockedBadgesTitle}</Text>
+                    {progressSummary.unlockedBadgeLabels.map((label) => (
+                      <Text key={label} style={styles.rewardItem}>
+                        {'\u25c6'} {label}
+                      </Text>
+                    ))}
+                  </View>
+                ) : null}
                 {progressSummary.completedChallengeLabels.length === 0 &&
-                progressSummary.unlockedSkinLabels.length === 0 ? (
+                progressSummary.unlockedSkinLabels.length === 0 &&
+                progressSummary.unlockedBadgeLabels.length === 0 ? (
                   <Text style={styles.rewardEmpty}>{progressSummary.emptyLabel}</Text>
                 ) : null}
               </>

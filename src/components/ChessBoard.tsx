@@ -3,6 +3,7 @@ import { useAudioPlayer } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 import {
   Animated,
+  AppState,
   Easing,
   Modal,
   Pressable,
@@ -18,9 +19,11 @@ import { ChessPiece } from './ChessPiece';
 import { ChessSquare } from './ChessSquare';
 import { VictoryOverlay } from './VictoryOverlay';
 import { getDailyChallengeById } from '../challenges/dailyChallenges';
+import { appVersionCode, appVersionName } from '../config/appVersion';
 import { aiLevelList, selectAiMove, type AiLevel } from '../game/ai';
 import { createGameFromFen, createInitialGame } from '../game/engine';
 import { languageOptions, t, type LanguageId } from '../i18n/translations';
+import { getBadgeById } from '../progress/badges';
 import {
   defaultPieceSkinId,
   pieceSkins,
@@ -79,9 +82,11 @@ type PlayerClock = {
 };
 
 type GameSnapshot = {
+  capturedQueen: boolean;
   checkCount: number;
   clockTimes: PlayerClock;
   fen: string;
+  promoted: boolean;
 };
 
 type AnimatedBoardMove = {
@@ -170,6 +175,7 @@ type ChessBoardProps = {
   initialClockModeId?: ClockModeId;
   initialOpponentMode?: OpponentMode;
   initialSoloPlayerColor?: SoloPlayerColor;
+  isBoardActive?: boolean;
   landscapeHeader?: ReactNode;
   languageId: LanguageId;
   onAiLevelChange?: (aiLevel: AiLevel) => void;
@@ -185,6 +191,7 @@ export function ChessBoard({
   initialClockModeId = 'none',
   initialOpponentMode = 0,
   initialSoloPlayerColor = 'w',
+  isBoardActive = true,
   landscapeHeader,
   languageId,
   onAiLevelChange,
@@ -212,7 +219,10 @@ export function ChessBoard({
   const [clockModeId, setClockModeId] = useState<ClockModeId>(initialClockModeId);
   const [clockTimes, setClockTimes] = useState<PlayerClock>(() => createClockTimes(initialClockModeId));
   const [gameStartedAt, setGameStartedAt] = useState(() => Date.now());
+  const [gameCapturedQueen, setGameCapturedQueen] = useState(false);
   const [gameCheckCount, setGameCheckCount] = useState(0);
+  const [gamePromoted, setGamePromoted] = useState(false);
+  const [gameUsedUndo, setGameUsedUndo] = useState(false);
   const [timeExpired, setTimeExpired] = useState<'b' | 'w' | null>(null);
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
@@ -229,6 +239,7 @@ export function ChessBoard({
   const [progressLoaded, setProgressLoaded] = useState(false);
   const [recordedOutcomeKey, setRecordedOutcomeKey] = useState<string | null>(null);
   const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [appState, setAppState] = useState(AppState.currentState);
   const game = useMemo(() => createGameFromFen(gameFen), [gameFen]);
   const boardTheme = boardThemes[selectedThemeId];
   const pieceSkin = pieceSkins[selectedPieceSkinId];
@@ -249,8 +260,11 @@ export function ChessBoard({
   const shouldFlipBoard = defaultShouldFlipBoard !== isBoardManuallyFlipped;
   const displayRows = shouldFlipBoard ? reversedBoardRows : boardRows;
   const displayCols = shouldFlipBoard ? reversedBoardCols : boardCols;
+  const isBoardInteractive =
+    appState === 'active' && isBoardActive && !settingsExpanded && !newGameConfirmationVisible;
   const isAiTurn =
     isAiEnabled &&
+    isBoardInteractive &&
     game.turn() !== soloPlayerColor &&
     !timeExpired &&
     !game.isGameOver() &&
@@ -309,14 +323,21 @@ export function ChessBoard({
           ? t(languageId, 'victory.blackWins')
           : '';
   const outcomeSubtitle = winningOutcome
-    ? t(
-        languageId,
-        outcomeVariant === 'defeat'
-          ? winningOutcome.reasonKey === 'victory.timeOut'
-            ? 'defeat.timeOut'
-            : 'defeat.checkmate'
-          : winningOutcome.reasonKey,
-      )
+    ? `${t(
+      languageId,
+      outcomeVariant === 'defeat'
+        ? winningOutcome.reasonKey === 'victory.timeOut'
+          ? 'defeat.timeOut'
+          : 'defeat.checkmate'
+        : winningOutcome.reasonKey,
+    )}\n${t(
+      languageId,
+      outcomeVariant === 'defeat'
+        ? 'motivation.defeat'
+        : !gameUsedUndo && moveHistory.length <= 30
+          ? 'motivation.fastWin'
+          : 'motivation.victory',
+    )}`
     : '';
   const outcomeProgressSummary = completedGameSummary
     ? {
@@ -346,6 +367,11 @@ export function ChessBoard({
           },
         ],
         title: t(languageId, 'overlay.progressTitle'),
+        unlockedBadgeLabels: completedGameSummary.newlyUnlockedBadgeIds
+          .map((badgeId) => getBadgeById(badgeId))
+          .filter((badge) => badge !== null)
+          .map((badge) => t(languageId, badge.titleKey)),
+        unlockedBadgesTitle: t(languageId, 'overlay.unlockedBadges'),
         unlockedSkinLabels: completedGameSummary.newlyUnlockedSkinIds.map((skinId) =>
           t(languageId, chessSkins[skinId].nameKey),
         ),
@@ -356,24 +382,46 @@ export function ChessBoard({
   const completedGameResult = useMemo<CompletedGameResult | null>(() => {
     if (winningOutcome) {
       return {
+        aiLevel: isAiEnabled ? selectedAiLevel : undefined,
+        capturedQueen: gameCapturedQueen,
         checkmate: game.isCheckmate(),
         checks: gameCheckCount,
+        moveCount: moveHistory.length,
+        promoted: gamePromoted,
         result: getProgressResult(winningOutcome.winner),
         selectedSkinId: selectedChessSkinId,
+        usedUndo: gameUsedUndo,
       };
     }
 
     if (game.isStalemate() || game.isDraw()) {
       return {
+        aiLevel: isAiEnabled ? selectedAiLevel : undefined,
+        capturedQueen: gameCapturedQueen,
         checkmate: false,
         checks: gameCheckCount,
+        moveCount: moveHistory.length,
+        promoted: gamePromoted,
         result: 'draw',
         selectedSkinId: selectedChessSkinId,
+        usedUndo: gameUsedUndo,
       };
     }
 
     return null;
-  }, [game, gameCheckCount, isAiEnabled, selectedChessSkinId, soloPlayerColor, winningOutcome]);
+  }, [
+    game,
+    gameCapturedQueen,
+    gameCheckCount,
+    gamePromoted,
+    gameUsedUndo,
+    isAiEnabled,
+    moveHistory.length,
+    selectedAiLevel,
+    selectedChessSkinId,
+    soloPlayerColor,
+    winningOutcome,
+  ]);
   const completedGameKey = completedGameResult ? `${gameFen}-${timeExpired ?? 'board'}` : null;
 
   useEffect(() => {
@@ -423,6 +471,12 @@ export function ChessBoard({
       isMounted = false;
     };
   }, [initialOpponentMode]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', setAppState);
+
+    return () => subscription.remove();
+  }, []);
 
   useEffect(() => {
     if (!preferencesLoaded) {
@@ -476,6 +530,9 @@ export function ChessBoard({
     setCompletedGameSummary({
       newlyCompletedDailyChallengeIds: optimisticNextProgress.completedDailyChallengeIds.filter(
         (challengeId) => !playerProgress.completedDailyChallengeIds.includes(challengeId),
+      ),
+      newlyUnlockedBadgeIds: optimisticNextProgress.unlockedBadgeIds.filter(
+        (badgeId) => !playerProgress.unlockedBadgeIds.includes(badgeId),
       ),
       newlyUnlockedSkinIds: optimisticNextProgress.unlockedSkinIds.filter(
         (skinId) => !playerProgress.unlockedSkinIds.includes(skinId),
@@ -544,7 +601,7 @@ export function ChessBoard({
   ]);
 
   useEffect(() => {
-    if (!isClockEnabled || timeExpired || game.isGameOver()) {
+    if (!isClockEnabled || !isBoardInteractive || timeExpired || game.isGameOver()) {
       return undefined;
     }
 
@@ -570,7 +627,7 @@ export function ChessBoard({
     }, 1000);
 
     return () => clearInterval(intervalId);
-  }, [game, isClockEnabled, timeExpired]);
+  }, [game, isBoardInteractive, isClockEnabled, timeExpired]);
 
   useEffect(() => {
     if (!animatedMove) {
@@ -689,7 +746,15 @@ export function ChessBoard({
   }
 
   function selectSquare(square: Square) {
-    if (timeExpired || isAiTurn || aiThinking || isAnimatingMove || game.isGameOver() || pendingPromotion) {
+    if (
+      !isBoardInteractive ||
+      timeExpired ||
+      isAiTurn ||
+      aiThinking ||
+      isAnimatingMove ||
+      game.isGameOver() ||
+      pendingPromotion
+    ) {
       return;
     }
 
@@ -705,7 +770,15 @@ export function ChessBoard({
   }
 
   function handleSquarePress(square: Square) {
-    if (timeExpired || isAiTurn || aiThinking || isAnimatingMove || game.isGameOver() || pendingPromotion) {
+    if (
+      !isBoardInteractive ||
+      timeExpired ||
+      isAiTurn ||
+      aiThinking ||
+      isAnimatingMove ||
+      game.isGameOver() ||
+      pendingPromotion
+    ) {
       return;
     }
 
@@ -753,12 +826,22 @@ export function ChessBoard({
     setGameSnapshots((currentSnapshots) => [
       ...currentSnapshots,
       {
+        capturedQueen: gameCapturedQueen,
         checkCount: gameCheckCount,
         clockTimes,
         fen: gameFen,
+        promoted: gamePromoted,
       },
     ]);
     setMoveHistory((currentHistory) => [...currentHistory, move.san]);
+    const isPlayerProgressMove = !isAiEnabled || move.color === soloPlayerColor;
+
+    if (isPlayerProgressMove && move.captured === 'q') {
+      setGameCapturedQueen(true);
+    }
+    if (isPlayerProgressMove && move.promotion) {
+      setGamePromoted(true);
+    }
     if (nextGame.isCheck()) {
       setGameCheckCount((currentCount) => currentCount + 1);
     }
@@ -809,8 +892,11 @@ export function ChessBoard({
     setGameStartedAt(Date.now());
     setGameFen(createInitialGame().fen());
     setGameSnapshots([]);
+    setGameCapturedQueen(false);
     setMoveHistory([]);
     setGameCheckCount(0);
+    setGamePromoted(false);
+    setGameUsedUndo(false);
     setClockTimes(createClockTimes(clockModeId));
     setTimeExpired(null);
     setSelectedSquare(null);
@@ -851,7 +937,10 @@ export function ChessBoard({
     setGameFen(previousSnapshot.fen);
     setGameSnapshots((currentSnapshots) => currentSnapshots.slice(0, -undoMoveCount));
     setMoveHistory((currentHistory) => currentHistory.slice(0, -undoMoveCount));
+    setGameCapturedQueen(previousSnapshot.capturedQueen);
     setGameCheckCount(previousSnapshot.checkCount);
+    setGamePromoted(previousSnapshot.promoted);
+    setGameUsedUndo(true);
     setClockTimes(previousSnapshot.clockTimes);
     setTimeExpired(null);
     setAiThinking(false);
@@ -871,8 +960,11 @@ export function ChessBoard({
     setAnimatedMove(null);
     setGameFen(createInitialGame().fen());
     setGameSnapshots([]);
+    setGameCapturedQueen(false);
     setMoveHistory([]);
     setGameCheckCount(0);
+    setGamePromoted(false);
+    setGameUsedUndo(false);
     setSelectedSquare(null);
     setPendingPromotion(null);
     Haptics.selectionAsync().catch(() => undefined);
@@ -1059,6 +1151,9 @@ export function ChessBoard({
           })}
         </View>
       </View>
+      <Text style={styles.settingsVersionText}>
+        v{appVersionName} ({appVersionCode})
+      </Text>
     </View>
   );
 
@@ -1805,6 +1900,12 @@ const styles = StyleSheet.create({
     color: '#f5efe6',
     fontSize: 13,
     fontWeight: '900',
+  },
+  settingsVersionText: {
+    color: 'rgba(245, 239, 230, 0.38)',
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
   },
   soundModeButton: {
     alignItems: 'center',

@@ -1,6 +1,15 @@
 import type { CompletedGameResult, PlayerProgress } from '../storage/playerProgress';
 
-export type DailyChallengeType = 'check' | 'checkmate' | 'playGame' | 'winGame';
+export type DailyChallengeType =
+  | 'aiLevelWin'
+  | 'check'
+  | 'checkmate'
+  | 'fastWin'
+  | 'noUndoWin'
+  | 'playGame'
+  | 'promotion'
+  | 'queenCapture'
+  | 'winGame';
 
 export type DailyChallenge = {
   descriptionKey: string;
@@ -59,6 +68,46 @@ export const dailyChallengePool: DailyChallenge[] = [
     target: 1,
     titleKey: 'challenge.checkmateOne.title',
     type: 'checkmate',
+  },
+  {
+    descriptionKey: 'challenge.fastWin.description',
+    id: 'fast-win',
+    rewardXp: 25,
+    target: 1,
+    titleKey: 'challenge.fastWin.title',
+    type: 'fastWin',
+  },
+  {
+    descriptionKey: 'challenge.captureQueen.description',
+    id: 'capture-queen',
+    rewardXp: 20,
+    target: 1,
+    titleKey: 'challenge.captureQueen.title',
+    type: 'queenCapture',
+  },
+  {
+    descriptionKey: 'challenge.promotion.description',
+    id: 'make-promotion',
+    rewardXp: 25,
+    target: 1,
+    titleKey: 'challenge.promotion.title',
+    type: 'promotion',
+  },
+  {
+    descriptionKey: 'challenge.noUndoWin.description',
+    id: 'no-undo-win',
+    rewardXp: 25,
+    target: 1,
+    titleKey: 'challenge.noUndoWin.title',
+    type: 'noUndoWin',
+  },
+  {
+    descriptionKey: 'challenge.aiLevelThree.description',
+    id: 'ai-level-three-win',
+    rewardXp: 30,
+    target: 1,
+    titleKey: 'challenge.aiLevelThree.title',
+    type: 'aiLevelWin',
   },
 ];
 
@@ -170,6 +219,26 @@ function getCompletedGameIncrement(challenge: DailyChallenge, result: CompletedG
 
   if (challenge.type === 'checkmate') {
     return result.checkmate ? 1 : 0;
+  }
+
+  if (challenge.type === 'fastWin') {
+    return result.result === 'win' && typeof result.moveCount === 'number' && result.moveCount <= 30 ? 1 : 0;
+  }
+
+  if (challenge.type === 'queenCapture') {
+    return result.capturedQueen ? 1 : 0;
+  }
+
+  if (challenge.type === 'promotion') {
+    return result.promoted ? 1 : 0;
+  }
+
+  if (challenge.type === 'noUndoWin') {
+    return result.result === 'win' && result.usedUndo === false ? 1 : 0;
+  }
+
+  if (challenge.type === 'aiLevelWin') {
+    return result.result === 'win' && typeof result.aiLevel === 'number' && result.aiLevel >= 3 ? 1 : 0;
   }
 
   return 0;

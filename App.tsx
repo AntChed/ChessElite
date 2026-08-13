@@ -362,6 +362,7 @@ export default function App() {
                 initialClockModeId={initialClockModeId}
                 initialOpponentMode={initialOpponentMode}
                 initialSoloPlayerColor={initialSoloPlayerColor}
+                isActive={screen === 'game'}
                 languageId={languageId}
                 onAiLevelChange={setAiLevel}
                 onBack={() => navigateTo('home')}
