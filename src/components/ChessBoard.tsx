@@ -20,8 +20,30 @@ import { ChessSquare } from './ChessSquare';
 import { VictoryOverlay } from './VictoryOverlay';
 import { getDailyChallengeById } from '../challenges/dailyChallenges';
 import { appVersionCode, appVersionName } from '../config/appVersion';
-import { aiLevelList, selectAiMove, type AiLevel } from '../game/ai';
-import { createGameFromFen, createInitialGame } from '../game/engine';
+import { aiLevelList, type AiLevel } from '../game/ai';
+import {
+  getBoardFromFen,
+  getLegalMovesFromFen,
+  getPieceFromFen,
+} from '../game/controller';
+import type { OpponentMode } from '../game/modes';
+import {
+  buildMoveHistoryRows,
+  getDisplaySquareCoordinates,
+  getGameStatusLabelKey,
+  getIsAiTurn,
+  getIsBoardInteractive,
+  shouldFlipBoard as getShouldFlipBoard,
+} from '../game/presentation';
+import {
+  clockModeList,
+  formatClockTime,
+  getWinningOutcome,
+  hasActiveGame,
+  type ClockModeId,
+} from '../game/session';
+import { useGameCompletion } from '../game/useGameCompletion';
+import { useGameSession } from '../game/useGameSession';
 import { languageOptions, t, type LanguageId } from '../i18n/translations';
 import { getBadgeById } from '../progress/badges';
 import {
@@ -36,23 +58,14 @@ import {
   type BoardThemeId,
 } from '../themes/boardThemes';
 import {
-  applyCompletedGameResult,
   createDefaultPlayerProgress,
   loadPlayerProgress,
-  recordCompletedGameWithSummary,
   savePlayerProgress,
-  type CompletedGameProgressSummary,
-  type CompletedGameResult,
   type PlayerProgress,
 } from '../storage/playerProgress';
-import {
-  recordCompletedMatch,
-  type MatchHistoryEntry,
-  type MatchHistoryReason,
-  type MatchHistoryResult,
-} from '../storage/matchHistory';
+import type { MatchHistoryEntry } from '../storage/matchHistory';
 import { loadUserPreferences, saveUserPreferences } from '../storage/userPreferences';
-import { files, toSquare } from '../utils/coordinates';
+import { toSquare } from '../utils/coordinates';
 
 const boardRows = Array.from({ length: 8 }, (_, row) => row);
 const boardCols = Array.from({ length: 8 }, (_, col) => col);
@@ -64,31 +77,13 @@ const promotionPieces: Array<{ labelKey: string; value: PieceSymbol }> = [
   { labelKey: 'promotion.bishop', value: 'b' },
   { labelKey: 'promotion.knight', value: 'n' },
 ];
-const clockModeList = [
-  { id: 'none', seconds: null },
-  { id: '5', seconds: 5 * 60 },
-  { id: '10', seconds: 10 * 60 },
-] as const;
 type PendingPromotion = {
   from: Square;
   to: Square;
 };
 
-export type ClockModeId = (typeof clockModeList)[number]['id'];
-export type OpponentMode = 0 | AiLevel;
+export type { ClockModeId, OpponentMode };
 export type SoloPlayerColor = Color;
-type PlayerClock = {
-  b: number;
-  w: number;
-};
-
-type GameSnapshot = {
-  capturedQueen: boolean;
-  checkCount: number;
-  clockTimes: PlayerClock;
-  fen: string;
-  promoted: boolean;
-};
 
 type AnimatedBoardMove = {
   from: Square;
@@ -100,76 +95,12 @@ type AnimatedBoardMove = {
   to: Square;
 };
 
-type MoveHistoryRow = {
-  black?: string;
-  moveNumber: number;
-  white: string;
-};
-
-function buildMoveHistoryRows(moveHistory: string[]): MoveHistoryRow[] {
-  const rows: MoveHistoryRow[] = [];
-
-  for (let index = 0; index < moveHistory.length; index += 2) {
-    rows.push({
-      black: moveHistory[index + 1],
-      moveNumber: index / 2 + 1,
-      white: moveHistory[index],
-    });
-  }
-
-  return rows;
-}
-
-function getClockSeconds(clockModeId: ClockModeId) {
-  return clockModeList.find((mode) => mode.id === clockModeId)?.seconds ?? null;
-}
-
-function createClockTimes(clockModeId: ClockModeId): PlayerClock {
-  const seconds = getClockSeconds(clockModeId) ?? 0;
-
-  return {
-    b: seconds,
-    w: seconds,
-  };
-}
-
-function formatClockTime(seconds: number) {
-  const safeSeconds = Math.max(0, seconds);
-  const minutes = Math.floor(safeSeconds / 60);
-  const remainingSeconds = safeSeconds % 60;
-
-  return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
-}
-
 function getWinRatePercent(progress: PlayerProgress) {
   if (progress.gamesPlayed === 0) {
     return 0;
   }
 
   return Math.round((progress.wins / progress.gamesPlayed) * 100);
-}
-
-function getSquareCoordinates(square: Square) {
-  const file = square[0];
-  const rank = Number(square[1]);
-
-  return {
-    col: files.indexOf(file as (typeof files)[number]),
-    row: 8 - rank,
-  };
-}
-
-function getDisplaySquareCoordinates(square: Square, shouldFlipBoard: boolean) {
-  const coordinates = getSquareCoordinates(square);
-
-  if (!shouldFlipBoard) {
-    return coordinates;
-  }
-
-  return {
-    col: 7 - coordinates.col,
-    row: 7 - coordinates.row,
-  };
 }
 
 type ChessBoardProps = {
@@ -208,23 +139,37 @@ export function ChessBoard({
   const capturePlayer = useAudioPlayer(require('../../assets/sounds/capture.wav'));
   const moveAnimationProgress = useRef(new Animated.Value(1)).current;
   const moveAnimationIdRef = useRef(0);
-  const [gameFen, setGameFen] = useState(() => createInitialGame().fen());
-  const [gameSnapshots, setGameSnapshots] = useState<GameSnapshot[]>([]);
-  const [moveHistory, setMoveHistory] = useState<string[]>([]);
   const [animatedMove, setAnimatedMove] = useState<AnimatedBoardMove | null>(null);
   const [opponentMode] = useState<OpponentMode>(initialOpponentMode);
   const [selectedAiLevel, setSelectedAiLevel] = useState<AiLevel>(
     initialOpponentMode === 0 ? 1 : initialOpponentMode,
   );
   const [aiThinking, setAiThinking] = useState(false);
-  const [clockModeId, setClockModeId] = useState<ClockModeId>(initialClockModeId);
-  const [clockTimes, setClockTimes] = useState<PlayerClock>(() => createClockTimes(initialClockModeId));
-  const [gameStartedAt, setGameStartedAt] = useState(() => Date.now());
-  const [gameCapturedQueen, setGameCapturedQueen] = useState(false);
-  const [gameCheckCount, setGameCheckCount] = useState(0);
-  const [gamePromoted, setGamePromoted] = useState(false);
-  const [gameUsedUndo, setGameUsedUndo] = useState(false);
-  const [timeExpired, setTimeExpired] = useState<'b' | 'w' | null>(null);
+  const {
+    changeClockMode,
+    clockModeId,
+    clockTimes,
+    gameCapturedQueen,
+    gameCheckCount,
+    gameFen,
+    gamePromoted,
+    gameSnapshots,
+    gameStartedAt,
+    gameState,
+    gameUsedUndo,
+    moveHistory,
+    playSessionMove,
+    resetSession,
+    selectSessionAiMove,
+    setClockTimes,
+    setTimeExpired,
+    timeExpired,
+    undoSessionMove,
+  } = useGameSession({
+    initialClockModeId,
+    initialOpponentMode,
+    initialSoloPlayerColor,
+  });
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
   const [selectedThemeId, setSelectedThemeId] = useState<BoardThemeId>(defaultBoardThemeId);
@@ -235,19 +180,16 @@ export function ChessBoard({
   const [newGameConfirmationVisible, setNewGameConfirmationVisible] = useState(false);
   const [dismissedOutcomeKey, setDismissedOutcomeKey] = useState<string | null>(null);
   const [playerProgress, setPlayerProgress] = useState<PlayerProgress>(() => createDefaultPlayerProgress());
-  const [completedGameSummary, setCompletedGameSummary] = useState<CompletedGameProgressSummary | null>(null);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [progressLoaded, setProgressLoaded] = useState(false);
-  const [recordedOutcomeKey, setRecordedOutcomeKey] = useState<string | null>(null);
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const [appState, setAppState] = useState(AppState.currentState);
-  const game = useMemo(() => createGameFromFen(gameFen), [gameFen]);
   const boardTheme = boardThemes[selectedThemeId];
   const pieceSkin = pieceSkins[selectedPieceSkinId];
-  const board = game.board();
+  const board = useMemo(() => getBoardFromFen(gameFen), [gameFen]);
   const legalMoves = useMemo(
-    () => (selectedSquare ? game.moves({ square: selectedSquare, verbose: true }) : []),
-    [game, selectedSquare],
+    () => (selectedSquare ? getLegalMovesFromFen(gameFen, selectedSquare) : []),
+    [gameFen, selectedSquare],
   );
   const isLandscape = width > height;
   const availableWidth = isLandscape ? Math.max(width * 0.54, 260) : Math.max(width - 32, 240);
@@ -257,23 +199,41 @@ export function ChessBoard({
   const isAnimatingMove = animatedMove !== null;
   const isAiEnabled = opponentMode !== 0;
   const soloPlayerColor = isAiEnabled ? initialSoloPlayerColor : 'w';
-  const defaultShouldFlipBoard = isAiEnabled && soloPlayerColor === 'b';
-  const shouldFlipBoard = defaultShouldFlipBoard !== isBoardManuallyFlipped;
+  const shouldFlipBoard = getShouldFlipBoard({
+    isAiEnabled,
+    isBoardManuallyFlipped,
+    soloPlayerColor,
+  });
   const displayRows = shouldFlipBoard ? reversedBoardRows : boardRows;
   const displayCols = shouldFlipBoard ? reversedBoardCols : boardCols;
-  const isBoardInteractive =
-    appState === 'active' && isBoardActive && !settingsExpanded && !newGameConfirmationVisible;
-  const isAiTurn =
-    isAiEnabled &&
-    isBoardInteractive &&
-    game.turn() !== soloPlayerColor &&
-    !timeExpired &&
-    !game.isGameOver() &&
-    !pendingPromotion &&
-    !isAnimatingMove;
+  const isBoardInteractive = getIsBoardInteractive({
+    appStateIsActive: appState === 'active',
+    isBoardActive,
+    newGameConfirmationVisible,
+    settingsExpanded,
+  });
+  const isAiTurn = getIsAiTurn({
+    gameState,
+    isAiEnabled,
+    isAnimatingMove,
+    isBoardInteractive,
+    pendingPromotion: Boolean(pendingPromotion),
+    soloPlayerColor,
+    timeExpired,
+  });
   const isClockEnabled = clockModeId !== 'none';
-  const turnLabel = game.turn() === 'w' ? t(languageId, 'status.whiteToMove') : t(languageId, 'status.blackToMove');
-  const statusLabel = getGameStatusLabel();
+  const statusLabelDescriptor = getGameStatusLabelKey({
+    aiThinking,
+    gameState,
+    isAiTurn,
+    pendingPromotion: Boolean(pendingPromotion),
+    selectedAiLevel,
+    selectedSquare,
+    timeExpired,
+  });
+  const statusLabel = statusLabelDescriptor.params
+    ? t(languageId, statusLabelDescriptor.key, statusLabelDescriptor.params)
+    : t(languageId, statusLabelDescriptor.key);
   const moveHistoryRows = useMemo(() => buildMoveHistoryRows(moveHistory), [moveHistory]);
   const latestMoveIndex = moveHistory.length - 1;
   const canUndo = gameSnapshots.length > 0;
@@ -290,23 +250,7 @@ export function ChessBoard({
   const selectedSoundLabel = t(languageId, soundEnabled ? 'sound.on' : 'sound.off');
   const selectedCoordinatesLabel = t(languageId, showCoordinates ? 'coordinates.on' : 'coordinates.off');
   const selectedChessSkinId = playerProgress.selectedSkinId;
-  const winningOutcome = useMemo(() => {
-    if (timeExpired) {
-      return {
-        reasonKey: 'victory.timeOut',
-        winner: timeExpired === 'w' ? 'b' : 'w',
-      } as const;
-    }
-
-    if (game.isCheckmate()) {
-      return {
-        reasonKey: 'victory.checkmate',
-        winner: game.turn() === 'w' ? 'b' : 'w',
-      } as const;
-    }
-
-    return null;
-  }, [game, timeExpired]);
+  const winningOutcome = useMemo(() => getWinningOutcome(gameState, timeExpired), [gameState, timeExpired]);
   const outcomeVariant =
     winningOutcome && isAiEnabled && winningOutcome.winner !== soloPlayerColor ? 'defeat' : 'victory';
   const shouldShowOutcome = Boolean(winningOutcome);
@@ -340,6 +284,30 @@ export function ChessBoard({
           : 'motivation.victory',
     )}`
     : '';
+  const { completedGameSummary, resetCompletion } = useGameCompletion({
+    clockModeId,
+    gameFen,
+    gameStartedAt,
+    gameState,
+    isAiEnabled,
+    moveHistory,
+    onMatchHistoryChange,
+    onPlayerProgressChange,
+    playerProgress,
+    progressLoaded,
+    selectedAiLevel,
+    selectedSkinId: selectedChessSkinId,
+    setPlayerProgress,
+    soloPlayerColor,
+    stats: {
+      capturedQueen: gameCapturedQueen,
+      checkCount: gameCheckCount,
+      promoted: gamePromoted,
+      usedUndo: gameUsedUndo,
+    },
+    timeExpired,
+    winningOutcome,
+  });
   const outcomeProgressSummary = completedGameSummary
     ? {
         completedChallengeLabels: completedGameSummary.newlyCompletedDailyChallengeIds
@@ -380,50 +348,6 @@ export function ChessBoard({
         xpGainedLabel: t(languageId, 'overlay.xpGained', { xp: completedGameSummary.xpGained }),
       }
     : null;
-  const completedGameResult = useMemo<CompletedGameResult | null>(() => {
-    if (winningOutcome) {
-      return {
-        aiLevel: isAiEnabled ? selectedAiLevel : undefined,
-        capturedQueen: gameCapturedQueen,
-        checkmate: game.isCheckmate(),
-        checks: gameCheckCount,
-        moveCount: moveHistory.length,
-        promoted: gamePromoted,
-        result: getProgressResult(winningOutcome.winner),
-        selectedSkinId: selectedChessSkinId,
-        usedUndo: gameUsedUndo,
-      };
-    }
-
-    if (game.isStalemate() || game.isDraw()) {
-      return {
-        aiLevel: isAiEnabled ? selectedAiLevel : undefined,
-        capturedQueen: gameCapturedQueen,
-        checkmate: false,
-        checks: gameCheckCount,
-        moveCount: moveHistory.length,
-        promoted: gamePromoted,
-        result: 'draw',
-        selectedSkinId: selectedChessSkinId,
-        usedUndo: gameUsedUndo,
-      };
-    }
-
-    return null;
-  }, [
-    game,
-    gameCapturedQueen,
-    gameCheckCount,
-    gamePromoted,
-    gameUsedUndo,
-    isAiEnabled,
-    moveHistory.length,
-    selectedAiLevel,
-    selectedChessSkinId,
-    soloPlayerColor,
-    winningOutcome,
-  ]);
-  const completedGameKey = completedGameResult ? `${gameFen}-${timeExpired ?? 'board'}` : null;
 
   useEffect(() => {
     let isMounted = true;
@@ -515,99 +439,12 @@ export function ChessBoard({
   }, [externalPlayerProgress, progressLoaded]);
 
   useEffect(() => {
-    if (
-      !progressLoaded ||
-      !completedGameResult ||
-      !completedGameKey ||
-      recordedOutcomeKey === completedGameKey
-    ) {
-      return;
-    }
-
-    let isMounted = true;
-    const optimisticNextProgress = applyCompletedGameResult(playerProgress, completedGameResult);
-
-    setRecordedOutcomeKey(completedGameKey);
-    setCompletedGameSummary({
-      newlyCompletedDailyChallengeIds: optimisticNextProgress.completedDailyChallengeIds.filter(
-        (challengeId) => !playerProgress.completedDailyChallengeIds.includes(challengeId),
-      ),
-      newlyUnlockedBadgeIds: optimisticNextProgress.unlockedBadgeIds.filter(
-        (badgeId) => !playerProgress.unlockedBadgeIds.includes(badgeId),
-      ),
-      newlyUnlockedSkinIds: optimisticNextProgress.unlockedSkinIds.filter(
-        (skinId) => !playerProgress.unlockedSkinIds.includes(skinId),
-      ),
-      nextProgress: optimisticNextProgress,
-      previousProgress: playerProgress,
-      xpGained: Math.max(0, optimisticNextProgress.xp - playerProgress.xp),
-    });
-
-    recordCompletedGameWithSummary(completedGameResult)
-      .then((summary) => {
-        if (isMounted) {
-          setCompletedGameSummary(summary);
-          setPlayerProgress(summary.nextProgress);
-          onPlayerProgressChange?.(summary.nextProgress);
-        }
-      })
-      .catch(() => {
-        // Keep the optimistic summary visible if persistence fails.
-      });
-
-    recordCompletedMatch({
-      aiLevel: isAiEnabled ? selectedAiLevel : undefined,
-      clockModeId,
-      completedAt: new Date().toISOString(),
-      durationSeconds: Math.max(0, Math.round((Date.now() - gameStartedAt) / 1000)),
-      finalFen: gameFen,
-      mode: isAiEnabled ? 'soloAi' : 'twoPlayers',
-      moveCount: moveHistory.length,
-      moves: moveHistory,
-      playerColor: isAiEnabled ? soloPlayerColor : undefined,
-      reason: getMatchHistoryReason(),
-      result: getMatchHistoryResult(),
-      selectedSkinId: selectedChessSkinId,
-      winner: winningOutcome?.winner ?? null,
-    })
-      .then((history) => {
-        if (isMounted) {
-          onMatchHistoryChange?.(history);
-        }
-      })
-      .catch(() => undefined);
-
-    return () => {
-      isMounted = false;
-    };
-  }, [
-    clockModeId,
-    completedGameKey,
-    completedGameResult,
-    game,
-    gameFen,
-    gameStartedAt,
-    isAiEnabled,
-    moveHistory,
-    onMatchHistoryChange,
-    onPlayerProgressChange,
-    playerProgress,
-    progressLoaded,
-    recordedOutcomeKey,
-    selectedAiLevel,
-    selectedChessSkinId,
-    soloPlayerColor,
-    timeExpired,
-    winningOutcome,
-  ]);
-
-  useEffect(() => {
-    if (!isClockEnabled || !isBoardInteractive || timeExpired || game.isGameOver()) {
+    if (!isClockEnabled || !isBoardInteractive || timeExpired || gameState.isGameOver) {
       return undefined;
     }
 
     const intervalId = setInterval(() => {
-      const activeColor = game.turn();
+      const activeColor = gameState.turn;
 
       setClockTimes((currentTimes) => {
         const nextValue = Math.max(0, currentTimes[activeColor] - 1);
@@ -628,7 +465,7 @@ export function ChessBoard({
     }, 1000);
 
     return () => clearInterval(intervalId);
-  }, [game, isBoardInteractive, isClockEnabled, timeExpired]);
+  }, [gameState.isGameOver, gameState.turn, isBoardInteractive, isClockEnabled, timeExpired]);
 
   useEffect(() => {
     if (!animatedMove) {
@@ -662,17 +499,17 @@ export function ChessBoard({
     setAiThinking(true);
 
     const timeoutId = setTimeout(() => {
-      const move = selectAiMove(gameFen, selectedAiLevel);
+      const move = selectSessionAiMove(selectedAiLevel);
 
       if (move) {
-        playMove(move.from, move.to, move.promotion);
+        void playMove(move.from, move.to, move.promotion);
       }
 
       setAiThinking(false);
     }, 650);
 
     return () => clearTimeout(timeoutId);
-  }, [gameFen, isAiTurn, selectedAiLevel]);
+  }, [gameFen, isAiTurn, selectedAiLevel, selectSessionAiMove]);
 
   function getMoveTo(square: Square): Move | undefined {
     return getMovesTo(square)[0];
@@ -686,78 +523,6 @@ export function ChessBoard({
     return t(languageId, `clock.${modeId}`);
   }
 
-  function getProgressResult(winner: Color): CompletedGameResult['result'] {
-    if (!isAiEnabled) {
-      return 'draw';
-    }
-
-    return winner === soloPlayerColor ? 'win' : 'loss';
-  }
-
-  function getMatchHistoryReason(): MatchHistoryReason {
-    if (timeExpired) {
-      return 'timeOut';
-    }
-
-    if (game.isCheckmate()) {
-      return 'checkmate';
-    }
-
-    if (game.isStalemate()) {
-      return 'stalemate';
-    }
-
-    return 'draw';
-  }
-
-  function getMatchHistoryResult(): MatchHistoryResult {
-    if (!winningOutcome) {
-      return 'draw';
-    }
-
-    if (!isAiEnabled) {
-      return 'win';
-    }
-
-    return completedGameResult?.result ?? 'draw';
-  }
-
-  function getGameStatusLabel() {
-    if (timeExpired) {
-      return timeExpired === 'w'
-        ? t(languageId, 'status.timeOutBlackWins')
-        : t(languageId, 'status.timeOutWhiteWins');
-    }
-
-    if (game.isCheckmate()) {
-      return game.turn() === 'w'
-        ? t(languageId, 'status.checkmateBlackWins')
-        : t(languageId, 'status.checkmateWhiteWins');
-    }
-
-    if (game.isStalemate()) {
-      return t(languageId, 'status.stalemate');
-    }
-
-    if (game.isDraw()) {
-      return t(languageId, 'status.draw');
-    }
-
-    if (game.isCheck()) {
-      return game.turn() === 'w' ? t(languageId, 'status.whiteCheck') : t(languageId, 'status.blackCheck');
-    }
-
-    if (pendingPromotion) {
-      return t(languageId, 'status.choosePromotion');
-    }
-
-    if (aiThinking || isAiTurn) {
-      return t(languageId, 'status.aiThinking', { level: selectedAiLevel });
-    }
-
-    return selectedSquare ? t(languageId, 'status.squareSelected', { square: selectedSquare }) : turnLabel;
-  }
-
   function selectSquare(square: Square) {
     if (
       !isBoardInteractive ||
@@ -765,15 +530,15 @@ export function ChessBoard({
       isAiTurn ||
       aiThinking ||
       isAnimatingMove ||
-      game.isGameOver() ||
+      gameState.isGameOver ||
       pendingPromotion
     ) {
       return;
     }
 
-    const piece = game.get(square);
+    const piece = getPieceFromFen(gameFen, square);
 
-    if (piece?.color === game.turn()) {
+    if (piece?.color === gameState.turn) {
       setSelectedSquare(square);
       Haptics.selectionAsync().catch(() => undefined);
       return;
@@ -789,7 +554,7 @@ export function ChessBoard({
       isAiTurn ||
       aiThinking ||
       isAnimatingMove ||
-      game.isGameOver() ||
+      gameState.isGameOver ||
       pendingPromotion
     ) {
       return;
@@ -809,7 +574,7 @@ export function ChessBoard({
         return;
       }
 
-      playMove(selectedSquare, square);
+      void playMove(selectedSquare, square);
       setSelectedSquare(null);
       return;
     }
@@ -817,48 +582,29 @@ export function ChessBoard({
     selectSquare(square);
   }
 
-  function playMove(from: Square, to: Square, promotion?: PieceSymbol) {
-    const nextGame = createGameFromFen(gameFen);
-    const move = nextGame.move({ from, promotion, to });
+  async function playMove(from: Square, to: Square, promotion?: PieceSymbol) {
+    const moveResult = await playSessionMove({ from, promotion, to }, ({ move }) => {
+      setAnimatedMove({
+        from: move.from,
+        id: moveAnimationIdRef.current + 1,
+        piece: {
+          color: move.color,
+          type: move.promotion ?? move.piece,
+        },
+        to: move.to,
+      });
+      moveAnimationIdRef.current += 1;
+    });
 
-    if (!move) {
+    if (!moveResult.success) {
       return;
     }
 
-    setAnimatedMove({
-      from: move.from,
-      id: moveAnimationIdRef.current + 1,
-      piece: {
-        color: move.color,
-        type: move.promotion ?? move.piece,
-      },
-      to: move.to,
-    });
-    moveAnimationIdRef.current += 1;
-    setGameFen(nextGame.fen());
-    setGameSnapshots((currentSnapshots) => [
-      ...currentSnapshots,
-      {
-        capturedQueen: gameCapturedQueen,
-        checkCount: gameCheckCount,
-        clockTimes,
-        fen: gameFen,
-        promoted: gamePromoted,
-      },
-    ]);
-    setMoveHistory((currentHistory) => [...currentHistory, move.san]);
-    const isPlayerProgressMove = !isAiEnabled || move.color === soloPlayerColor;
-
-    if (isPlayerProgressMove && move.captured === 'q') {
-      setGameCapturedQueen(true);
-    }
-    if (isPlayerProgressMove && move.promotion) {
-      setGamePromoted(true);
-    }
-    if (nextGame.isCheck()) {
-      setGameCheckCount((currentCount) => currentCount + 1);
-    }
-    playMoveFeedback(Boolean(move.captured), nextGame.isCheck(), nextGame.isGameOver());
+    playMoveFeedback(
+      Boolean(moveResult.move.captured),
+      moveResult.state.isCheck,
+      moveResult.state.isGameOver,
+    );
   }
 
   function playMoveFeedback(isCapture: boolean, isCheck: boolean, isGameOver: boolean) {
@@ -891,36 +637,30 @@ export function ChessBoard({
       return;
     }
 
-    playMove(pendingPromotion.from, pendingPromotion.to, piece);
+    void playMove(pendingPromotion.from, pendingPromotion.to, piece);
     setPendingPromotion(null);
     setSelectedSquare(null);
   }
 
   function resetCurrentGame() {
     setAnimatedMove(null);
-    setCompletedGameSummary(null);
     setDismissedOutcomeKey(null);
     setNewGameConfirmationVisible(false);
-    setRecordedOutcomeKey(null);
-    setGameStartedAt(Date.now());
-    setGameFen(createInitialGame().fen());
-    setGameSnapshots([]);
-    setGameCapturedQueen(false);
-    setMoveHistory([]);
-    setGameCheckCount(0);
-    setGamePromoted(false);
-    setGameUsedUndo(false);
-    setClockTimes(createClockTimes(clockModeId));
-    setTimeExpired(null);
+    resetCompletion();
+    resetSession();
     setSelectedSquare(null);
     setPendingPromotion(null);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
   }
 
   function handleNewGame() {
-    const hasActiveGame = moveHistory.length > 0 && !timeExpired && !game.isGameOver();
-
-    if (hasActiveGame) {
+    if (
+      hasActiveGame({
+        isGameOver: gameState.isGameOver,
+        moveCount: moveHistory.length,
+        timeExpired,
+      })
+    ) {
       setNewGameConfirmationVisible(true);
       Haptics.selectionAsync().catch(() => undefined);
       return;
@@ -939,23 +679,10 @@ export function ChessBoard({
       return;
     }
 
-    const undoMoveCount =
-      isAiEnabled && game.turn() === soloPlayerColor && gameSnapshots.length >= 2 ? 2 : 1;
-    const previousSnapshot = gameSnapshots[gameSnapshots.length - undoMoveCount];
-
     setAnimatedMove(null);
-    setCompletedGameSummary(null);
     setDismissedOutcomeKey(null);
-    setRecordedOutcomeKey(null);
-    setGameFen(previousSnapshot.fen);
-    setGameSnapshots((currentSnapshots) => currentSnapshots.slice(0, -undoMoveCount));
-    setMoveHistory((currentHistory) => currentHistory.slice(0, -undoMoveCount));
-    setGameCapturedQueen(previousSnapshot.capturedQueen);
-    setGameCheckCount(previousSnapshot.checkCount);
-    setGamePromoted(previousSnapshot.promoted);
-    setGameUsedUndo(true);
-    setClockTimes(previousSnapshot.clockTimes);
-    setTimeExpired(null);
+    resetCompletion();
+    undoSessionMove();
     setAiThinking(false);
     setSelectedSquare(null);
     setPendingPromotion(null);
@@ -963,21 +690,10 @@ export function ChessBoard({
   }
 
   function handleClockModeChange(nextClockModeId: ClockModeId) {
-    setClockModeId(nextClockModeId);
-    setCompletedGameSummary(null);
     setDismissedOutcomeKey(null);
-    setRecordedOutcomeKey(null);
-    setGameStartedAt(Date.now());
-    setClockTimes(createClockTimes(nextClockModeId));
-    setTimeExpired(null);
+    resetCompletion();
+    changeClockMode(nextClockModeId);
     setAnimatedMove(null);
-    setGameFen(createInitialGame().fen());
-    setGameSnapshots([]);
-    setGameCapturedQueen(false);
-    setMoveHistory([]);
-    setGameCheckCount(0);
-    setGamePromoted(false);
-    setGameUsedUndo(false);
     setSelectedSquare(null);
     setPendingPromotion(null);
     Haptics.selectionAsync().catch(() => undefined);
@@ -1190,7 +906,7 @@ export function ChessBoard({
                   hidePiece
                   isCaptureMove={Boolean(move?.captured)}
                   isCheckedKing={Boolean(
-                    game.isCheck() && piece?.type === 'k' && piece.color === game.turn(),
+                    gameState.isCheck && piece?.type === 'k' && piece.color === gameState.turn,
                   )}
                   isLegalMove={Boolean(move)}
                   isSelected={selectedSquare === square}
@@ -1297,7 +1013,7 @@ export function ChessBoard({
         <Text
           style={[
             styles.statusText,
-            timeExpired || game.isCheck() || game.isGameOver() ? styles.alertText : null,
+            timeExpired || gameState.isCheck || gameState.isGameOver ? styles.alertText : null,
           ]}
         >
           {statusLabel}
@@ -1366,13 +1082,13 @@ export function ChessBoard({
         ) : null}
       </View>
       <View style={[styles.clockPanel, { width: controlsWidth }]}>
-        <View style={[styles.clockCard, game.turn() === 'w' && !timeExpired ? styles.clockCardActive : null]}>
+        <View style={[styles.clockCard, gameState.turn === 'w' && !timeExpired ? styles.clockCardActive : null]}>
           <Text style={styles.clockLabel}>{t(languageId, 'clock.white')}</Text>
           <Text style={[styles.clockValue, timeExpired === 'w' ? styles.clockExpired : null]}>
             {isClockEnabled ? formatClockTime(clockTimes.w) : '--:--'}
           </Text>
         </View>
-        <View style={[styles.clockCard, game.turn() === 'b' && !timeExpired ? styles.clockCardActive : null]}>
+        <View style={[styles.clockCard, gameState.turn === 'b' && !timeExpired ? styles.clockCardActive : null]}>
           <Text style={styles.clockLabel}>{t(languageId, 'clock.black')}</Text>
           <Text style={[styles.clockValue, timeExpired === 'b' ? styles.clockExpired : null]}>
             {isClockEnabled ? formatClockTime(clockTimes.b) : '--:--'}

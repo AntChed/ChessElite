@@ -76,6 +76,9 @@ chess-elite-loaded.png
 # local env files
 .env*.local
 
+# local planning docs
+MULTIPLAYER_ONLINE_V1_SPEC.md
+
 # typescript
 *.tsbuildinfo
 
