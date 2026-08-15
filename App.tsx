@@ -17,6 +17,7 @@ import { BoardScreen } from './src/screens/BoardScreen';
 import { GameReviewScreen } from './src/screens/GameReviewScreen';
 import { HomeScreen, type SoloGameConfig } from './src/screens/HomeScreen';
 import { MatchHistoryScreen } from './src/screens/MatchHistoryScreen';
+import { OnlineScreen } from './src/screens/OnlineScreen';
 import { SkinsScreen } from './src/screens/SkinsScreen';
 import { StatsScreen } from './src/screens/StatsScreen';
 import { defaultLanguageId, t, type LanguageId } from './src/i18n/translations';
@@ -29,11 +30,19 @@ import { loadMatchHistory, type MatchHistoryEntry } from './src/storage/matchHis
 import { loadUserPreferences } from './src/storage/userPreferences';
 import type { ClockModeId, OpponentMode, SoloPlayerColor } from './src/components/ChessBoard';
 import type { AiLevel } from './src/game/ai';
+import { getOnlineGame } from './src/online/api';
+import {
+  clearActiveOnlineGameId,
+  clearOnlinePlayerSession,
+  loadActiveOnlineGameId,
+  loadOnlinePlayerSession,
+} from './src/online/identityStorage';
+import { createOnlineGameLaunch, type OnlineGameLaunch } from './src/online/types';
 
 SplashScreen.preventAutoHideAsync();
 
 const minimumLoadingTime = 1800;
-type AppScreen = 'game' | 'history' | 'home' | 'review' | 'skins' | 'stats';
+type AppScreen = 'game' | 'history' | 'home' | 'online' | 'review' | 'skins' | 'stats';
 type ReturnScreen = 'game' | 'home';
 type StartGameOptions = {
   clockModeId?: ClockModeId;
@@ -48,6 +57,7 @@ export default function App() {
   const [aiLevel, setAiLevel] = useState<AiLevel>(1);
   const [gameSessionId, setGameSessionId] = useState(0);
   const [initialClockModeId, setInitialClockModeId] = useState<ClockModeId>('none');
+  const [initialOnlineGame, setInitialOnlineGame] = useState<OnlineGameLaunch | null>(null);
   const [initialOpponentMode, setInitialOpponentMode] = useState<OpponentMode>(0);
   const [initialSoloPlayerColor, setInitialSoloPlayerColor] = useState<SoloPlayerColor>('w');
   const [isTransitionVisible, setIsTransitionVisible] = useState(false);
@@ -60,6 +70,7 @@ export default function App() {
   const screenTranslateY = useRef(new Animated.Value(0)).current;
   const screenTransitionProgress = useRef(new Animated.Value(0)).current;
   const isTransitioningRef = useRef(false);
+  const onlineResumeAttemptedRef = useRef(false);
   const loadingStyle = useMemo(
     () => ({
       width: loadingProgress.interpolate({
@@ -184,6 +195,7 @@ export default function App() {
   const startGame = useCallback(
     (opponentMode: OpponentMode, options: StartGameOptions = {}) => {
       setInitialClockModeId(options.clockModeId ?? 'none');
+      setInitialOnlineGame(null);
       setInitialOpponentMode(opponentMode);
       setInitialSoloPlayerColor(options.soloPlayerColor ?? 'w');
       setGameSessionId((currentId) => currentId + 1);
@@ -202,6 +214,52 @@ export default function App() {
     },
     [startGame],
   );
+
+  const startOnlineGame = useCallback(
+    (onlineGame: OnlineGameLaunch) => {
+      setInitialClockModeId('none');
+      setInitialOnlineGame(onlineGame);
+      setInitialOpponentMode(0);
+      setInitialSoloPlayerColor(onlineGame.color);
+      setGameSessionId((currentId) => currentId + 1);
+      navigateTo('game');
+    },
+    [navigateTo],
+  );
+
+  useEffect(() => {
+    if (showLoadingScreen || screen !== 'home' || onlineResumeAttemptedRef.current) {
+      return;
+    }
+
+    onlineResumeAttemptedRef.current = true;
+
+    async function resumeOnlineGameIfNeeded() {
+      const [session, activeGameId] = await Promise.all([
+        loadOnlinePlayerSession(),
+        loadActiveOnlineGameId(),
+      ]);
+
+      if (!session || !activeGameId) {
+        return;
+      }
+
+      const { game } = await getOnlineGame(session.token, activeGameId);
+
+      if (game.status !== 'ACTIVE' && game.status !== 'WAITING') {
+        await clearActiveOnlineGameId(game.id);
+        return;
+      }
+
+      startOnlineGame(createOnlineGameLaunch(session, game));
+    }
+
+    resumeOnlineGameIfNeeded().catch((error) => {
+      if (error?.status === 401 || error?.code === 'UNAUTHORIZED') {
+        clearOnlinePlayerSession().catch(() => undefined);
+      }
+    });
+  }, [screen, showLoadingScreen, startOnlineGame]);
 
   const openSecondaryScreen = useCallback(
     (nextScreen: 'history' | 'skins' | 'stats') => {
@@ -245,6 +303,11 @@ export default function App() {
 
       if (screen === 'history' || screen === 'skins' || screen === 'stats') {
         closeSecondaryScreen();
+        return true;
+      }
+
+      if (screen === 'online') {
+        navigateTo('home');
         return true;
       }
 
@@ -344,11 +407,22 @@ export default function App() {
                 aiLevel={aiLevel}
                 languageId={languageId}
                 onOpenHistory={() => openSecondaryScreen('history')}
+                onOpenOnline={() => navigateTo('online')}
                 onOpenSkins={() => openSecondaryScreen('skins')}
                 onOpenStats={() => openSecondaryScreen('stats')}
                 onStartAiGame={startSoloGame}
                 onStartLocalGame={() => startGame(0)}
                 playerProgress={playerProgress}
+              />
+            </View>
+          ) : null}
+          {screen === 'online' ? (
+            <View style={styles.routeLayer}>
+              <OnlineScreen
+                currentChessSkinId={playerProgress.selectedSkinId}
+                languageId={languageId}
+                onBack={() => navigateTo('home')}
+                onStartOnlineGame={startOnlineGame}
               />
             </View>
           ) : null}
@@ -360,6 +434,7 @@ export default function App() {
             >
               <BoardScreen
                 initialClockModeId={initialClockModeId}
+                initialOnlineGame={initialOnlineGame}
                 initialOpponentMode={initialOpponentMode}
                 initialSoloPlayerColor={initialSoloPlayerColor}
                 isActive={screen === 'game'}

@@ -29,6 +29,7 @@ import {
 } from '../components/ChessBoard';
 import { t, type LanguageId } from '../i18n/translations';
 import type { AiLevel } from '../game/ai';
+import type { OnlineGameLaunch } from '../online/types';
 import { getBadgeProgress, getNextBadge } from '../progress/badges';
 import { chessSkins } from '../skins/chessSkins';
 import type { MatchHistoryEntry } from '../storage/matchHistory';
@@ -36,6 +37,7 @@ import { getLevelProgress, type PlayerProgress } from '../storage/playerProgress
 
 type BoardScreenProps = {
   initialClockModeId?: ClockModeId;
+  initialOnlineGame?: OnlineGameLaunch | null;
   initialOpponentMode?: OpponentMode;
   initialSoloPlayerColor?: SoloPlayerColor;
   isActive?: boolean;
@@ -53,6 +55,7 @@ type BoardScreenProps = {
 
 export function BoardScreen({
   initialClockModeId = 'none',
+  initialOnlineGame = null,
   initialOpponentMode = 0,
   initialSoloPlayerColor = 'w',
   isActive = true,
@@ -227,6 +230,7 @@ export function BoardScreen({
         <ChessBoard
           externalPlayerProgress={playerProgress}
           initialClockModeId={initialClockModeId}
+          initialOnlineGame={initialOnlineGame}
           initialOpponentMode={initialOpponentMode}
           initialSoloPlayerColor={initialSoloPlayerColor}
           isBoardActive={isBoardActive}

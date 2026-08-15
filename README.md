@@ -135,6 +135,24 @@ cd ChessElite
 npx tsc --noEmit
 ```
 
+Mode online en local :
+
+```powershell
+$env:EXPO_PUBLIC_CHESS_ELITE_API_URL="http://<ip-locale-du-pc>:3000"
+npm start
+```
+
+Sur emulateur Android, `http://10.0.2.2:3000` pointe vers le PC hote. Sur telephone physique, utiliser l'adresse IP locale du PC qui lance `ChessEliteBackend`.
+
+Test online avec un seul telephone :
+
+1. Demarrer `ChessEliteBackend` sur le PC.
+2. Lancer l'app sur le telephone avec `EXPO_PUBLIC_CHESS_ELITE_API_URL` qui pointe vers l'IP locale du PC.
+3. Creer une partie online sur le telephone et noter le code.
+4. Simuler le deuxieme joueur depuis PowerShell avec les endpoints REST du backend.
+5. Jouer les blancs sur le telephone, puis jouer les noirs depuis PowerShell.
+6. Couper/reouvrir l'app pour verifier la reprise automatique de la partie active.
+
 Verifier les dependances Expo :
 
 ```powershell

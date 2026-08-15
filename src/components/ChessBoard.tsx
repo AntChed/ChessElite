@@ -22,6 +22,7 @@ import { getDailyChallengeById } from '../challenges/dailyChallenges';
 import { appVersionCode, appVersionName } from '../config/appVersion';
 import { aiLevelList, type AiLevel } from '../game/ai';
 import {
+  applyMoveToFen,
   getBoardFromFen,
   getLegalMovesFromFen,
   getPieceFromFen,
@@ -51,7 +52,7 @@ import {
   pieceSkins,
   type PieceSkinId,
 } from '../skins/pieceSkins';
-import { chessSkins, getChessSkinIdForSelection } from '../skins/chessSkins';
+import { chessSkins, getChessSkinIdForSelection, isChessSkinId } from '../skins/chessSkins';
 import {
   boardThemes,
   defaultBoardThemeId,
@@ -66,6 +67,8 @@ import {
 import type { MatchHistoryEntry } from '../storage/matchHistory';
 import { loadUserPreferences, saveUserPreferences } from '../storage/userPreferences';
 import { toSquare } from '../utils/coordinates';
+import type { OnlineGameLaunch, OnlineGameResult } from '../online/types';
+import { useOnlineGameSync } from '../online/useOnlineGameSync';
 
 const boardRows = Array.from({ length: 8 }, (_, row) => row);
 const boardCols = Array.from({ length: 8 }, (_, col) => col);
@@ -103,8 +106,115 @@ function getWinRatePercent(progress: PlayerProgress) {
   return Math.round((progress.wins / progress.gamesPlayed) * 100);
 }
 
+type OnlinePlayerOutcome = 'draw' | 'loss' | 'win';
+
+type OnlineFinishPresentation = {
+  headlineKey: string;
+  subtitleKey: string;
+  titleKey: string;
+  variant: 'defeat' | 'victory';
+};
+
+function getOnlinePlayerOutcome({
+  playerColor,
+  playerId,
+  result,
+  winnerPlayerId,
+}: {
+  playerColor: Color;
+  playerId?: string;
+  result: OnlineGameResult | null;
+  winnerPlayerId: string | null;
+}): OnlinePlayerOutcome {
+  if (result === 'DRAW' || result === 'STALEMATE') {
+    return 'draw';
+  }
+
+  if (result === 'WHITE_WIN') {
+    return playerColor === 'w' ? 'win' : 'loss';
+  }
+
+  if (result === 'BLACK_WIN') {
+    return playerColor === 'b' ? 'win' : 'loss';
+  }
+
+  if (winnerPlayerId && playerId) {
+    return winnerPlayerId === playerId ? 'win' : 'loss';
+  }
+
+  return 'draw';
+}
+
+function getOnlineFinishPresentation(
+  result: OnlineGameResult | null,
+  playerOutcome: OnlinePlayerOutcome,
+): OnlineFinishPresentation {
+  if (playerOutcome === 'draw') {
+    return result === 'STALEMATE'
+      ? {
+          headlineKey: 'online.stalemateStatus',
+          subtitleKey: 'online.stalemateSubtitle',
+          titleKey: 'online.drawTitle',
+          variant: 'victory',
+        }
+      : {
+          headlineKey: 'online.drawStatus',
+          subtitleKey: 'online.drawSubtitle',
+          titleKey: 'online.drawTitle',
+          variant: 'victory',
+        };
+  }
+
+  if (result === 'RESIGNATION') {
+    return playerOutcome === 'win'
+      ? {
+          headlineKey: 'online.resignationVictoryStatus',
+          subtitleKey: 'online.resignationVictorySubtitle',
+          titleKey: 'victory.title',
+          variant: 'victory',
+        }
+      : {
+          headlineKey: 'online.resignationDefeatStatus',
+          subtitleKey: 'online.resignationDefeatSubtitle',
+          titleKey: 'defeat.title',
+          variant: 'defeat',
+        };
+  }
+
+  if (result === 'CHECKMATE') {
+    return playerOutcome === 'win'
+      ? {
+          headlineKey: 'online.checkmateVictoryStatus',
+          subtitleKey: 'online.checkmateVictorySubtitle',
+          titleKey: 'victory.title',
+          variant: 'victory',
+        }
+      : {
+          headlineKey: 'online.checkmateDefeatStatus',
+          subtitleKey: 'online.checkmateDefeatSubtitle',
+          titleKey: 'defeat.title',
+          variant: 'defeat',
+        };
+  }
+
+  return playerOutcome === 'win'
+    ? {
+        headlineKey: 'online.generalVictoryStatus',
+        subtitleKey: 'online.generalVictorySubtitle',
+        titleKey: 'victory.title',
+        variant: 'victory',
+      }
+    : {
+        headlineKey: 'online.generalDefeatStatus',
+        subtitleKey: 'online.generalDefeatSubtitle',
+        titleKey: 'defeat.title',
+        variant: 'defeat',
+      };
+}
+
 type ChessBoardProps = {
   initialClockModeId?: ClockModeId;
+  initialOnlineGame?: OnlineGameLaunch | null;
   initialOpponentMode?: OpponentMode;
   initialSoloPlayerColor?: SoloPlayerColor;
   isBoardActive?: boolean;
@@ -121,6 +231,7 @@ type ChessBoardProps = {
 
 export function ChessBoard({
   initialClockModeId = 'none',
+  initialOnlineGame = null,
   initialOpponentMode = 0,
   initialSoloPlayerColor = 'w',
   isBoardActive = true,
@@ -140,6 +251,7 @@ export function ChessBoard({
   const moveAnimationProgress = useRef(new Animated.Value(1)).current;
   const moveAnimationIdRef = useRef(0);
   const [animatedMove, setAnimatedMove] = useState<AnimatedBoardMove | null>(null);
+  const [animationBoardFen, setAnimationBoardFen] = useState<string | null>(null);
   const [opponentMode] = useState<OpponentMode>(initialOpponentMode);
   const [selectedAiLevel, setSelectedAiLevel] = useState<AiLevel>(
     initialOpponentMode === 0 ? 1 : initialOpponentMode,
@@ -158,6 +270,7 @@ export function ChessBoard({
     gameState,
     gameUsedUndo,
     moveHistory,
+    applyExternalFen,
     playSessionMove,
     resetSession,
     selectSessionAiMove,
@@ -165,8 +278,10 @@ export function ChessBoard({
     setTimeExpired,
     timeExpired,
     undoSessionMove,
+    resignSession,
   } = useGameSession({
     initialClockModeId,
+    initialOnlineGame,
     initialOpponentMode,
     initialSoloPlayerColor,
   });
@@ -184,9 +299,28 @@ export function ChessBoard({
   const [progressLoaded, setProgressLoaded] = useState(false);
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const [appState, setAppState] = useState(AppState.currentState);
+  const {
+    clearOnlineActiveGame,
+    isOnlineGame,
+    markOnlineDisconnected,
+    onlineBlackPieceSkinId,
+    onlineConnected,
+    onlineOpponentConnected,
+    onlineOpponentNickname,
+    onlinePlayerColor,
+    onlineResult,
+    onlineStatus,
+    onlineWhitePieceSkinId,
+    onlineWinnerPlayerId,
+    recordPendingMoveFen,
+  } = useOnlineGameSync({
+    applyExternalFen,
+    initialOnlineGame,
+  });
   const boardTheme = boardThemes[selectedThemeId];
   const pieceSkin = pieceSkins[selectedPieceSkinId];
-  const board = useMemo(() => getBoardFromFen(gameFen), [gameFen]);
+  const boardFen = animationBoardFen ?? gameFen;
+  const board = useMemo(() => getBoardFromFen(boardFen), [boardFen]);
   const legalMoves = useMemo(
     () => (selectedSquare ? getLegalMovesFromFen(gameFen, selectedSquare) : []),
     [gameFen, selectedSquare],
@@ -197,21 +331,32 @@ export function ChessBoard({
   const boardSize = Math.min(availableWidth, availableHeight, 520);
   const squareSize = boardSize / 8;
   const isAnimatingMove = animatedMove !== null;
-  const isAiEnabled = opponentMode !== 0;
+  const onlineWhiteChessSkin =
+    isOnlineGame && isChessSkinId(onlineWhitePieceSkinId) ? chessSkins[onlineWhitePieceSkinId] : null;
+  const onlineBlackChessSkin =
+    isOnlineGame && isChessSkinId(onlineBlackPieceSkinId) ? chessSkins[onlineBlackPieceSkinId] : null;
+  const whitePieceSkin = onlineWhiteChessSkin ? pieceSkins[onlineWhiteChessSkin.pieceSkinId] : pieceSkin;
+  const blackPieceSkin = onlineBlackChessSkin ? pieceSkins[onlineBlackChessSkin.pieceSkinId] : pieceSkin;
+  const isAiEnabled = !isOnlineGame && opponentMode !== 0;
   const soloPlayerColor = isAiEnabled ? initialSoloPlayerColor : 'w';
-  const shouldFlipBoard = getShouldFlipBoard({
-    isAiEnabled,
-    isBoardManuallyFlipped,
-    soloPlayerColor,
-  });
+  const shouldFlipBoard = isOnlineGame
+    ? isBoardManuallyFlipped
+      ? onlinePlayerColor === 'w'
+      : onlinePlayerColor === 'b'
+    : getShouldFlipBoard({
+        isAiEnabled,
+        isBoardManuallyFlipped,
+        soloPlayerColor,
+      });
   const displayRows = shouldFlipBoard ? reversedBoardRows : boardRows;
   const displayCols = shouldFlipBoard ? reversedBoardCols : boardCols;
-  const isBoardInteractive = getIsBoardInteractive({
-    appStateIsActive: appState === 'active',
-    isBoardActive,
-    newGameConfirmationVisible,
-    settingsExpanded,
-  });
+  const isBoardInteractive =
+    getIsBoardInteractive({
+      appStateIsActive: appState === 'active',
+      isBoardActive,
+      newGameConfirmationVisible,
+      settingsExpanded,
+    }) && (!isOnlineGame || onlineStatus === 'ACTIVE');
   const isAiTurn = getIsAiTurn({
     gameState,
     isAiEnabled,
@@ -231,12 +376,51 @@ export function ChessBoard({
     selectedSquare,
     timeExpired,
   });
-  const statusLabel = statusLabelDescriptor.params
+  const baseStatusLabel = statusLabelDescriptor.params
     ? t(languageId, statusLabelDescriptor.key, statusLabelDescriptor.params)
     : t(languageId, statusLabelDescriptor.key);
+  const onlineOpponentLabel = onlineOpponentNickname ?? t(languageId, 'online.opponentWaiting');
+  const onlineGameFinished = isOnlineGame && onlineStatus === 'FINISHED';
+  const onlinePlayerOutcome = onlineGameFinished
+    ? getOnlinePlayerOutcome({
+        playerColor: onlinePlayerColor,
+        playerId: initialOnlineGame?.playerId,
+        result: onlineResult,
+        winnerPlayerId: onlineWinnerPlayerId,
+      })
+    : null;
+  const onlineFinishPresentation =
+    onlineGameFinished && onlinePlayerOutcome
+      ? getOnlineFinishPresentation(onlineResult, onlinePlayerOutcome)
+      : null;
+  const statusLabel =
+    isOnlineGame && onlineStatus === 'WAITING'
+      ? t(languageId, 'online.boardWaiting')
+      : onlineFinishPresentation
+        ? t(languageId, onlineFinishPresentation.headlineKey)
+        : isOnlineGame && !onlineConnected
+          ? t(languageId, 'online.reconnecting')
+          : isOnlineGame && onlineOpponentConnected === false
+            ? t(languageId, 'online.opponentDisconnected')
+            : isOnlineGame && gameState.turn !== onlinePlayerColor
+              ? t(languageId, 'online.opponentTurn')
+              : baseStatusLabel;
   const moveHistoryRows = useMemo(() => buildMoveHistoryRows(moveHistory), [moveHistory]);
   const latestMoveIndex = moveHistory.length - 1;
-  const canUndo = gameSnapshots.length > 0;
+  const canUndo = !isOnlineGame && gameSnapshots.length > 0;
+  const canResignOnlineGame = isOnlineGame && onlineStatus === 'ACTIVE';
+  const onlineOpponentChessSkin = onlinePlayerColor === 'b' ? onlineWhiteChessSkin : onlineBlackChessSkin;
+  const onlineOpponentSkinLabel = onlineOpponentChessSkin
+    ? t(languageId, onlineOpponentChessSkin.nameKey)
+    : t(languageId, 'online.skinWaiting');
+  const onlineOpponentConnectionLabel =
+    onlineStatus === 'WAITING'
+      ? t(languageId, 'online.opponentWaiting')
+      : onlineOpponentConnected === false
+        ? t(languageId, 'online.opponentOffline')
+        : onlineOpponentConnected === true
+          ? t(languageId, 'online.opponentOnline')
+          : t(languageId, 'online.opponentSyncing');
   const controlsWidth = isLandscape ? Math.min(Math.max(width - boardSize - 72, 260), 420) : Math.min(boardSize, 420);
   const settingsModalWidth = Math.min(Math.max(width - 32, 280), 420);
   const selectedAiLevelLabel = t(languageId, 'ai.level', { level: selectedAiLevel });
@@ -252,22 +436,32 @@ export function ChessBoard({
   const selectedChessSkinId = playerProgress.selectedSkinId;
   const winningOutcome = useMemo(() => getWinningOutcome(gameState, timeExpired), [gameState, timeExpired]);
   const outcomeVariant =
-    winningOutcome && isAiEnabled && winningOutcome.winner !== soloPlayerColor ? 'defeat' : 'victory';
-  const shouldShowOutcome = Boolean(winningOutcome);
+    onlineFinishPresentation
+      ? onlineFinishPresentation.variant
+      : winningOutcome && isAiEnabled && winningOutcome.winner !== soloPlayerColor
+        ? 'defeat'
+        : 'victory';
+  const shouldShowOutcome = Boolean(winningOutcome) || Boolean(onlineFinishPresentation);
   const outcomeKey =
-    shouldShowOutcome && winningOutcome
+    onlineFinishPresentation
+      ? `online-${onlineResult ?? 'UNKNOWN'}-${onlineWinnerPlayerId ?? 'draw'}-${gameFen}`
+      : shouldShowOutcome && winningOutcome
       ? `${outcomeVariant}-${winningOutcome.winner}-${winningOutcome.reasonKey}-${gameFen}`
       : null;
   const outcomeOverlayVisible = Boolean(outcomeKey && dismissedOutcomeKey !== outcomeKey);
   const outcomeHeadline =
-    outcomeVariant === 'defeat'
+    onlineFinishPresentation
+      ? t(languageId, onlineFinishPresentation.headlineKey)
+      : outcomeVariant === 'defeat'
       ? t(languageId, 'defeat.aiWins')
       : winningOutcome?.winner === 'w'
         ? t(languageId, 'victory.whiteWins')
         : winningOutcome?.winner === 'b'
           ? t(languageId, 'victory.blackWins')
           : '';
-  const outcomeSubtitle = winningOutcome
+  const outcomeSubtitle = onlineFinishPresentation
+    ? t(languageId, onlineFinishPresentation.subtitleKey, { nickname: onlineOpponentLabel })
+    : winningOutcome
     ? `${t(
       languageId,
       outcomeVariant === 'defeat'
@@ -284,8 +478,10 @@ export function ChessBoard({
           : 'motivation.victory',
     )}`
     : '';
+  const outcomeTitleKey = onlineFinishPresentation?.titleKey ?? (outcomeVariant === 'defeat' ? 'defeat.title' : 'victory.title');
   const { completedGameSummary, resetCompletion } = useGameCompletion({
     clockModeId,
+    enabled: !isOnlineGame,
     gameFen,
     gameStartedAt,
     gameState,
@@ -484,6 +680,7 @@ export function ChessBoard({
     animation.start(({ finished }) => {
       if (finished) {
         setAnimatedMove((currentMove) => (currentMove?.id === animatedMove.id ? null : currentMove));
+        setAnimationBoardFen(null);
       }
     });
 
@@ -531,6 +728,7 @@ export function ChessBoard({
       aiThinking ||
       isAnimatingMove ||
       gameState.isGameOver ||
+      (isOnlineGame && gameState.turn !== onlinePlayerColor) ||
       pendingPromotion
     ) {
       return;
@@ -555,6 +753,7 @@ export function ChessBoard({
       aiThinking ||
       isAnimatingMove ||
       gameState.isGameOver ||
+      (isOnlineGame && gameState.turn !== onlinePlayerColor) ||
       pendingPromotion
     ) {
       return;
@@ -583,28 +782,47 @@ export function ChessBoard({
   }
 
   async function playMove(from: Square, to: Square, promotion?: PieceSymbol) {
-    const moveResult = await playSessionMove({ from, promotion, to }, ({ move }) => {
-      setAnimatedMove({
-        from: move.from,
-        id: moveAnimationIdRef.current + 1,
-        piece: {
-          color: move.color,
-          type: move.promotion ?? move.piece,
-        },
-        to: move.to,
-      });
-      moveAnimationIdRef.current += 1;
-    });
+    const boardFenBeforeMove = gameFen;
+    const move = { from, promotion, to };
 
-    if (!moveResult.success) {
-      return;
+    if (isOnlineGame) {
+      const expectedMoveResult = applyMoveToFen(boardFenBeforeMove, move);
+      recordPendingMoveFen(expectedMoveResult.success ? expectedMoveResult.state.fen : null);
     }
 
-    playMoveFeedback(
-      Boolean(moveResult.move.captured),
-      moveResult.state.isCheck,
-      moveResult.state.isGameOver,
-    );
+    try {
+      const moveResult = await playSessionMove(move, ({ move: appliedMove }) => {
+        moveAnimationProgress.setValue(0);
+        setAnimationBoardFen(boardFenBeforeMove);
+        setAnimatedMove({
+          from: appliedMove.from,
+          id: moveAnimationIdRef.current + 1,
+          piece: {
+            color: appliedMove.color,
+            type: appliedMove.promotion ?? appliedMove.piece,
+          },
+          to: appliedMove.to,
+        });
+        moveAnimationIdRef.current += 1;
+      });
+
+      if (!moveResult.success) {
+        return;
+      }
+
+      playMoveFeedback(
+        Boolean(moveResult.move.captured),
+        moveResult.state.isCheck,
+        moveResult.state.isGameOver,
+      );
+    } catch {
+      if (isOnlineGame) {
+        markOnlineDisconnected();
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
+    } finally {
+      recordPendingMoveFen(null);
+    }
   }
 
   function playMoveFeedback(isCapture: boolean, isCheck: boolean, isGameOver: boolean) {
@@ -654,6 +872,12 @@ export function ChessBoard({
   }
 
   function handleNewGame() {
+    if (isOnlineGame) {
+      setNewGameConfirmationVisible(true);
+      Haptics.selectionAsync().catch(() => undefined);
+      return;
+    }
+
     if (
       hasActiveGame({
         isGameOver: gameState.isGameOver,
@@ -687,6 +911,13 @@ export function ChessBoard({
     setSelectedSquare(null);
     setPendingPromotion(null);
     Haptics.selectionAsync().catch(() => undefined);
+  }
+
+  async function handleResignOnlineGame() {
+    setNewGameConfirmationVisible(false);
+    await resignSession();
+    await clearOnlineActiveGame();
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
   }
 
   function handleClockModeChange(nextClockModeId: ClockModeId) {
@@ -732,6 +963,11 @@ export function ChessBoard({
   }
 
   function handleOutcomeNewGame() {
+    if (isOnlineGame) {
+      handleCloseOutcomeOverlay();
+      return;
+    }
+
     resetCurrentGame();
   }
 
@@ -948,7 +1184,12 @@ export function ChessBoard({
                   },
                 ]}
               >
-                <ChessPiece color={piece.color} size={squareSize} skin={pieceSkin} type={piece.type} />
+                <ChessPiece
+                  color={piece.color}
+                  size={squareSize}
+                  skin={piece.color === 'w' ? whitePieceSkin : blackPieceSkin}
+                  type={piece.type}
+                />
               </View>
             );
           }),
@@ -1000,7 +1241,7 @@ export function ChessBoard({
             <ChessPiece
               color={animatedMove.piece.color}
               size={squareSize}
-              skin={pieceSkin}
+              skin={animatedMove.piece.color === 'w' ? whitePieceSkin : blackPieceSkin}
               type={animatedMove.piece.type}
             />
           </Animated.View>
@@ -1018,6 +1259,26 @@ export function ChessBoard({
         >
           {statusLabel}
         </Text>
+        {isOnlineGame ? (
+          <View style={[styles.onlineOpponentPanel, { width: controlsWidth }]}>
+            <Text style={styles.onlineOpponentLabel}>{t(languageId, 'online.opponent')}</Text>
+            <Text numberOfLines={1} style={styles.onlineOpponentName}>
+              {onlineOpponentLabel}
+            </Text>
+            <Text numberOfLines={1} style={styles.onlineOpponentSkin}>
+              {onlineOpponentSkinLabel}
+            </Text>
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.onlineOpponentConnection,
+                onlineOpponentConnected === false ? styles.onlineOpponentConnectionOffline : null,
+              ]}
+            >
+              {onlineOpponentConnectionLabel}
+            </Text>
+          </View>
+        ) : null}
         {pendingPromotion ? (
           <View style={styles.promotionPanel}>
             {promotionPieces.map((piece) => {
@@ -1095,29 +1356,33 @@ export function ChessBoard({
           </Text>
         </View>
       </View>
-      <View style={[styles.actionRow, { width: controlsWidth }]}>
-        <Pressable
-          accessibilityLabel={t(languageId, 'accessibility.newGame')}
-          onPress={handleNewGame}
-          style={styles.newGameButton}
-        >
-          <View style={styles.actionButtonContent}>
-            <Text style={styles.newGameIcon}>{'\u21bb'}</Text>
-            <Text style={styles.newGameText}>{t(languageId, 'newGame')}</Text>
-          </View>
-        </Pressable>
-        <Pressable
-          accessibilityLabel={t(languageId, 'accessibility.undo')}
-          disabled={!canUndo}
-          onPress={handleUndoMove}
-          style={[styles.undoButton, !canUndo ? styles.undoButtonDisabled : null]}
-        >
-          <View style={styles.actionButtonContent}>
-            <Text style={[styles.undoIcon, !canUndo ? styles.undoTextDisabled : null]}>{'\u21b6'}</Text>
-            <Text style={[styles.undoText, !canUndo ? styles.undoTextDisabled : null]}>{t(languageId, 'undo')}</Text>
-          </View>
-        </Pressable>
-      </View>
+      {!isOnlineGame || canResignOnlineGame ? (
+        <View style={[styles.actionRow, { width: controlsWidth }]}>
+          <Pressable
+            accessibilityLabel={t(languageId, 'accessibility.newGame')}
+            onPress={handleNewGame}
+            style={styles.newGameButton}
+          >
+            <View style={styles.actionButtonContent}>
+              <Text style={styles.newGameIcon}>{'\u21bb'}</Text>
+              <Text style={styles.newGameText}>{t(languageId, isOnlineGame ? 'online.resign' : 'newGame')}</Text>
+            </View>
+          </Pressable>
+          {!isOnlineGame ? (
+            <Pressable
+              accessibilityLabel={t(languageId, 'accessibility.undo')}
+              disabled={!canUndo}
+              onPress={handleUndoMove}
+              style={[styles.undoButton, !canUndo ? styles.undoButtonDisabled : null]}
+            >
+              <View style={styles.actionButtonContent}>
+                <Text style={[styles.undoIcon, !canUndo ? styles.undoTextDisabled : null]}>{'\u21b6'}</Text>
+                <Text style={[styles.undoText, !canUndo ? styles.undoTextDisabled : null]}>{t(languageId, 'undo')}</Text>
+              </View>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
       </View>
       <Modal
         animationType="fade"
@@ -1173,8 +1438,12 @@ export function ChessBoard({
             style={StyleSheet.absoluteFill}
           />
           <View style={[styles.confirmModalCard, { width: settingsModalWidth }]}>
-            <Text style={styles.confirmModalTitle}>{t(languageId, 'newGame.confirmTitle')}</Text>
-            <Text style={styles.confirmModalText}>{t(languageId, 'newGame.confirmMessage')}</Text>
+            <Text style={styles.confirmModalTitle}>
+              {t(languageId, isOnlineGame ? 'online.resignConfirmTitle' : 'newGame.confirmTitle')}
+            </Text>
+            <Text style={styles.confirmModalText}>
+              {t(languageId, isOnlineGame ? 'online.resignConfirmMessage' : 'newGame.confirmMessage')}
+            </Text>
             <View style={styles.confirmModalActions}>
               <Pressable
                 accessibilityLabel={t(languageId, 'newGame.cancel')}
@@ -1189,14 +1458,16 @@ export function ChessBoard({
               </Pressable>
               <Pressable
                 accessibilityLabel={t(languageId, 'newGame.confirm')}
-                onPress={resetCurrentGame}
+                onPress={isOnlineGame ? handleResignOnlineGame : resetCurrentGame}
                 style={({ pressed }) => [
                   styles.confirmModalButton,
                   styles.confirmModalPrimaryButton,
                   pressed ? styles.buttonPressed : null,
                 ]}
               >
-                <Text style={styles.confirmModalPrimaryText}>{t(languageId, 'newGame.confirm')}</Text>
+                <Text style={styles.confirmModalPrimaryText}>
+                  {t(languageId, isOnlineGame ? 'online.resign' : 'newGame.confirm')}
+                </Text>
               </Pressable>
             </View>
           </View>
@@ -1207,13 +1478,13 @@ export function ChessBoard({
           languageId,
           outcomeVariant === 'defeat' ? 'accessibility.closeDefeat' : 'accessibility.closeVictory',
         )}
-        emptyProgressLabel={t(languageId, 'overlay.noExtraReward')}
-        newGameLabel={t(languageId, 'newGame')}
+        emptyProgressLabel={t(languageId, isOnlineGame ? 'online.resultSaved' : 'overlay.noExtraReward')}
+        newGameLabel={t(languageId, isOnlineGame ? 'online.closeResult' : 'newGame')}
         onClose={handleCloseOutcomeOverlay}
         onNewGame={handleOutcomeNewGame}
         progressSummary={outcomeProgressSummary}
         subtitle={outcomeSubtitle}
-        title={t(languageId, outcomeVariant === 'defeat' ? 'defeat.title' : 'victory.title')}
+        title={t(languageId, outcomeTitleKey)}
         variant={outcomeVariant}
         visible={outcomeOverlayVisible}
         winnerLabel={outcomeHeadline}
@@ -1521,6 +1792,47 @@ const styles = StyleSheet.create({
     color: '#17110d',
     fontSize: 14,
     fontWeight: '800',
+  },
+  onlineOpponentLabel: {
+    color: 'rgba(245, 239, 230, 0.58)',
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  onlineOpponentConnection: {
+    color: '#8df05f',
+    flexShrink: 1,
+    fontSize: 11,
+    fontWeight: '900',
+    marginTop: 5,
+    textTransform: 'uppercase',
+  },
+  onlineOpponentConnectionOffline: {
+    color: '#ff9c86',
+  },
+  onlineOpponentName: {
+    color: '#ffd560',
+    flexShrink: 1,
+    fontSize: 16,
+    fontWeight: '900',
+    marginTop: 3,
+  },
+  onlineOpponentPanel: {
+    backgroundColor: 'rgba(245, 239, 230, 0.06)',
+    borderColor: 'rgba(215, 169, 80, 0.24)',
+    borderRadius: 6,
+    borderWidth: 1,
+    marginTop: 14,
+    maxWidth: 420,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  onlineOpponentSkin: {
+    color: 'rgba(245, 239, 230, 0.72)',
+    flexShrink: 1,
+    fontSize: 12,
+    fontWeight: '800',
+    marginTop: 3,
   },
   pieceLayerItem: {
     alignItems: 'center',

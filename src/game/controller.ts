@@ -97,3 +97,23 @@ export function applyMoveToFen(fen: string, move: ChessMove): MoveResult {
     success: true,
   };
 }
+
+export function inferMoveSanBetweenFens(previousFen: string, nextFen: string): string | null {
+  const previousGame = createGameFromFen(previousFen);
+  const legalMoves = previousGame.moves({ verbose: true });
+
+  for (const move of legalMoves) {
+    const candidateGame = createGameFromFen(previousFen);
+    candidateGame.move({
+      from: move.from,
+      promotion: move.promotion,
+      to: move.to,
+    });
+
+    if (candidateGame.fen() === nextFen) {
+      return move.san;
+    }
+  }
+
+  return null;
+}

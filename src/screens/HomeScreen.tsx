@@ -35,6 +35,7 @@ type HomeScreenProps = {
   aiLevel: AiLevel;
   languageId: LanguageId;
   onOpenHistory: () => void;
+  onOpenOnline: () => void;
   onOpenSkins: () => void;
   onOpenStats: () => void;
   onStartAiGame: (config: SoloGameConfig) => void;
@@ -85,6 +86,7 @@ export function HomeScreen({
   aiLevel,
   languageId,
   onOpenHistory,
+  onOpenOnline,
   onOpenSkins,
   onOpenStats,
   onStartAiGame,
@@ -157,6 +159,11 @@ export function HomeScreen({
   function handleOpenHistory() {
     Haptics.selectionAsync().catch(() => undefined);
     onOpenHistory();
+  }
+
+  function handleOpenOnline() {
+    Haptics.selectionAsync().catch(() => undefined);
+    onOpenOnline();
   }
 
   return (
@@ -232,6 +239,22 @@ export function HomeScreen({
               <View style={styles.buttonCopy}>
                 <Text style={styles.secondaryButtonText}>{t(languageId, 'home.players')}</Text>
                 <Text style={styles.secondaryButtonSubtext}>{t(languageId, 'home.localMatch')}</Text>
+              </View>
+            </Pressable>
+            <Pressable
+              accessibilityLabel={t(languageId, 'accessibility.startOnline')}
+              android_ripple={{ color: 'rgba(215, 169, 80, 0.18)' }}
+              onPress={handleOpenOnline}
+              style={({ pressed }) => [
+                styles.onlineButton,
+                isLandscape ? styles.actionButtonLandscape : null,
+                pressed ? styles.buttonPressed : null,
+              ]}
+            >
+              <PlayerModeIcon count={2} tone="light" />
+              <View style={styles.buttonCopy}>
+                <Text style={styles.secondaryButtonText}>{t(languageId, 'home.online')}</Text>
+                <Text style={styles.secondaryButtonSubtext}>{t(languageId, 'home.onlineMatch')}</Text>
               </View>
             </Pressable>
           </View>
@@ -757,6 +780,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'rgba(12, 14, 17, 0.74)',
     borderColor: '#d7a950',
+    borderRadius: 6,
+    borderWidth: 2,
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    minHeight: 54,
+    paddingHorizontal: 20,
+    width: '100%',
+  },
+  onlineButton: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(26, 33, 42, 0.82)',
+    borderColor: 'rgba(118, 190, 255, 0.72)',
     borderRadius: 6,
     borderWidth: 2,
     flexDirection: 'row',

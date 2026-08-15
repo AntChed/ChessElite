@@ -1,9 +1,10 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Color } from 'chess.js';
 
 import {
   createInitialGameState,
   getGameStateFromFen,
+  inferMoveSanBetweenFens,
   type ChessMove,
   type MoveResult,
 } from './controller';
@@ -17,27 +18,33 @@ import {
   type PlayerClock,
 } from './session';
 import type { AiLevel } from './ai';
+import type { OnlineGameLaunch } from '../online/types';
 
 type AcceptedMoveResult = Extract<MoveResult, { success: true }>;
 
 type UseGameSessionOptions = {
   initialClockModeId: ClockModeId;
+  initialOnlineGame?: OnlineGameLaunch | null;
   initialOpponentMode: OpponentMode;
   initialSoloPlayerColor: Color;
 };
 
 export function useGameSession({
   initialClockModeId,
+  initialOnlineGame,
   initialOpponentMode,
   initialSoloPlayerColor,
 }: UseGameSessionOptions) {
   const gameControllerRef = useRef(
     createGameController({
+      initialFen: initialOnlineGame?.initialFen,
+      onlineGame: initialOnlineGame,
       opponentMode: initialOpponentMode,
       soloPlayerColor: initialSoloPlayerColor,
     }),
   );
-  const [gameFen, setGameFen] = useState(() => createInitialGameState().fen);
+  const [gameFen, setGameFen] = useState(() => initialOnlineGame?.initialFen ?? createInitialGameState().fen);
+  const gameFenRef = useRef(gameFen);
   const [gameSnapshots, setGameSnapshots] = useState<GameSnapshot[]>([]);
   const [moveHistory, setMoveHistory] = useState<string[]>([]);
   const [clockModeId, setClockModeId] = useState<ClockModeId>(initialClockModeId);
@@ -51,6 +58,10 @@ export function useGameSession({
   const gameState = useMemo(() => getGameStateFromFen(gameFen), [gameFen]);
   const isAiEnabled = initialOpponentMode !== 0;
   const soloPlayerColor = isAiEnabled ? initialSoloPlayerColor : 'w';
+
+  useEffect(() => {
+    gameFenRef.current = gameFen;
+  }, [gameFen]);
 
   async function playSessionMove(
     move: ChessMove,
@@ -68,6 +79,7 @@ export function useGameSession({
     const appliedMove = moveResult.move;
 
     beforeCommit?.(moveResult);
+    gameFenRef.current = moveResult.state.fen;
     setGameFen(moveResult.state.fen);
     setGameSnapshots((currentSnapshots) => [
       ...currentSnapshots,
@@ -102,6 +114,7 @@ export function useGameSession({
     const initialFen = createInitialGameState().fen;
 
     gameControllerRef.current.loadFen?.(initialFen);
+    gameFenRef.current = initialFen;
     setGameStartedAt(Date.now());
     setGameFen(initialFen);
     setGameSnapshots([]);
@@ -113,6 +126,28 @@ export function useGameSession({
     setClockTimes(createClockTimes(nextClockModeId));
     setTimeExpired(null);
   }
+
+  const applyExternalFen = useCallback((nextFen: string) => {
+    const currentFen = gameFenRef.current;
+
+    if (nextFen === currentFen) {
+      return;
+    }
+
+    const inferredSan = inferMoveSanBetweenFens(currentFen, nextFen);
+
+    gameControllerRef.current.loadFen?.(nextFen);
+    gameFenRef.current = nextFen;
+    setGameFen(nextFen);
+
+    if (inferredSan) {
+      setMoveHistory((currentHistory) => [...currentHistory, inferredSan]);
+    }
+  }, []);
+
+  const resignSession = useCallback(async () => {
+    await gameControllerRef.current.resign?.();
+  }, []);
 
   function changeClockMode(nextClockModeId: ClockModeId) {
     setClockModeId(nextClockModeId);
@@ -133,6 +168,7 @@ export function useGameSession({
     const previousSnapshot = gameSnapshots[gameSnapshots.length - undoMoveCount];
 
     gameControllerRef.current.loadFen?.(previousSnapshot.fen);
+    gameFenRef.current = previousSnapshot.fen;
     setGameFen(previousSnapshot.fen);
     setGameSnapshots((currentSnapshots) => currentSnapshots.slice(0, -undoMoveCount));
     setMoveHistory((currentHistory) => currentHistory.slice(0, -undoMoveCount));
@@ -173,6 +209,7 @@ export function useGameSession({
     gameState,
     gameUsedUndo,
     moveHistory,
+    applyExternalFen,
     playSessionMove,
     resetSession,
     selectSessionAiMove,
@@ -180,5 +217,6 @@ export function useGameSession({
     setTimeExpired,
     timeExpired,
     undoSessionMove,
+    resignSession,
   };
 }

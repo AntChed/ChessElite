@@ -29,6 +29,7 @@ type GameCompletionStats = {
 
 type UseGameCompletionOptions = {
   clockModeId: ClockModeId;
+  enabled?: boolean;
   gameFen: string;
   gameStartedAt: number;
   gameState: GameState;
@@ -49,6 +50,7 @@ type UseGameCompletionOptions = {
 
 export function useGameCompletion({
   clockModeId,
+  enabled = true,
   gameFen,
   gameStartedAt,
   gameState,
@@ -123,6 +125,7 @@ export function useGameCompletion({
   useEffect(() => {
     if (
       !progressLoaded ||
+      !enabled ||
       !completedGameResult ||
       !completedGameKey ||
       recordedOutcomeKey === completedGameKey
@@ -194,6 +197,7 @@ export function useGameCompletion({
     clockModeId,
     completedGameKey,
     completedGameResult,
+    enabled,
     gameFen,
     gameStartedAt,
     gameState,
