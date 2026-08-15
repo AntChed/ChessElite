@@ -138,11 +138,24 @@ npx tsc --noEmit
 Mode online en local :
 
 ```powershell
-$env:EXPO_PUBLIC_CHESS_ELITE_API_URL="http://<ip-locale-du-pc>:3000"
-npm start
+Copy-Item .env.expo.example .env.expo
+# Modifier .env.expo avec l'IP locale du PC qui lance ChessEliteBackend.
+npm run start:expo
 ```
 
 Sur emulateur Android, `http://10.0.2.2:3000` pointe vers le PC hote. Sur telephone physique, utiliser l'adresse IP locale du PC qui lance `ChessEliteBackend`.
+
+Mode online avec le backend de production :
+
+```powershell
+Copy-Item .env.production.example .env.production
+# Modifier .env.production avec l'URL publique du backend Railway.
+npm run start:production
+```
+
+Important : les fichiers `.env.expo` et `.env.production` sont ignores par Git. Les builds APK/AAB doivent etre lances avec les scripts `:production` pour que `EXPO_PUBLIC_CHESS_ELITE_API_URL` soit bien injectee dans le bundle mobile.
+
+Les scripts `:production` forcent les taches Release avec `--rerun-tasks` avant de generer l'artefact. C'est volontaire : les variables `EXPO_PUBLIC_*` sont integrees dans le bundle JavaScript au moment du build, et un build Gradle incremental peut sinon reutiliser un artefact precedent.
 
 Test online avec un seul telephone :
 
@@ -175,11 +188,31 @@ cd ChessElite
 npm run android:apk
 ```
 
+Pour regenerer un APK connecte au backend de production :
+
+```powershell
+cd ChessElite
+npm run android:apk:production
+```
+
+Fichier APK genere :
+
+```txt
+ChessElite/android/app/build/outputs/apk/release/app-release.apk
+```
+
 Bundle Play Store signe :
 
 ```powershell
 cd ChessElite
 npm run android:aab
+```
+
+Bundle Play Store signe connecte au backend de production :
+
+```powershell
+cd ChessElite
+npm run android:aab:production
 ```
 
 Fichier `.aab` a envoyer dans la Play Console :

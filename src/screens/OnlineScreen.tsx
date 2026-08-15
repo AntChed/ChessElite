@@ -22,7 +22,6 @@ import {
   updateOnlineNickname,
   type OnlineApiError,
 } from '../online/api';
-import { onlineApiBaseUrl } from '../online/config';
 import {
   clearActiveOnlineGameId,
   clearOnlinePlayerSession,
@@ -56,7 +55,11 @@ function getErrorMessage(error: unknown) {
     return `${apiError.code}: ${apiError.message}`;
   }
 
-  return error instanceof Error ? error.message : 'Online service unavailable';
+  if (error instanceof Error && !error.message.toLowerCase().includes('fetch')) {
+    return error.message;
+  }
+
+  return 'Online service unavailable';
 }
 
 function isUnauthorizedError(error: unknown) {
@@ -433,7 +436,7 @@ export function OnlineScreen({
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>{t(languageId, 'online.nickname')}</Text>
               <Text numberOfLines={1} style={styles.sectionSummary}>
-                {session?.player.id.slice(0, 8) ?? onlineApiBaseUrl}
+                {session?.player.id.slice(0, 8) ?? ''}
               </Text>
             </View>
             <View style={styles.inputRow}>
@@ -560,7 +563,6 @@ export function OnlineScreen({
           </View>
 
           {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
-          <Text style={styles.endpointText}>{onlineApiBaseUrl}</Text>
         </View>
       </ScrollView>
     </ImageBackground>
@@ -684,12 +686,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingBottom: 26,
     paddingTop: 26,
-  },
-  endpointText: {
-    color: 'rgba(245, 239, 230, 0.34)',
-    fontSize: 11,
-    fontWeight: '700',
-    textAlign: 'center',
   },
   errorText: {
     color: '#ff9f8f',
